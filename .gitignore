@@ -31,3 +31,7 @@ runs/
 pyvenv.cfg
 .venv
 pip-selfcheck.json
+
+# Log files
+wandb/
+share/

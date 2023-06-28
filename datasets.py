@@ -55,3 +55,13 @@ def line_dataset(n=8000):
     X = np.stack((x, y), axis=1)
     X *= 4
     return TensorDataset(torch.from_numpy(X.astype(np.float32)))
+
+def generate_circle(center, radius, num_samples) -> np.ndarray:
+    """ generate points inside a circle with cetner and radius """
+    theta = np.linspace(0, 2*np.pi, num_samples)
+    centerX, centerY = center
+    a, b = radius * np.cos(theta) + centerX, radius * np.sin(theta) + centerY
+
+    r = np.random.rand((num_samples)) * radius
+    x, y = r * np.cos(theta) + centerX, r * np.sin(theta) + centerY
+    return np.stack((x, y), axis=1)
