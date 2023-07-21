@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+from PIL import Image
 
 from torch.utils.data import Dataset, TensorDataset
 
@@ -46,6 +47,46 @@ class PointDataset(Dataset):
         context = torch.from_numpy(self.context[index].astype('int64'))
         
         return points, context
+    
+
+class CustomImageDataset(Dataset):
+    def __init__(self, root, transform=None):
+        self.root = root
+        self.transform = transform
+        self.image_path = glob(os.path.join(root, '**', '*.jpg'))
+        self.label_dict = {}
+        obj = []
+        atr = []
+        labels = [label.split(' ') for label in os.listdir(root)]
+        
+        for l in labels:
+            obj.append(l[0])
+            atr.append(l[1])
+        
+        obj = list(set(obj))
+        atr = list(set(atr))
+         
+        for i in range(len(obj)):
+            self.label_dict[obj[i]] = i
+        
+        for i in range(len(atr)):
+            self.label_dict[atr[i]] = i
+        
+    def __len__(self):
+        return len(self.image_path)
+
+    def __getitem__(self, index):
+        if torch.is_tensor(index):
+            index = index.to_list()
+        image = Image.open(self.image_path[index]).convert('RGB')
+        label = self.image_path[index].split('/')[-2]
+        label = label.split(' ')
+        
+        if self.transform is not None:
+            image = self.transform(image)
+        
+        return image, torch.tensor(self.label_dict[label[0]], dtype=torch.int64), torch.tensor(self.label_dict[label[1]], dtype=torch.int64)
+    
     
     
 def line_dataset(n=8000):

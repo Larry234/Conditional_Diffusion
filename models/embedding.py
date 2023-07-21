@@ -1,26 +1,36 @@
+import math
 import torch
 import torch.nn as nn
 
-class ConditionalEmbedding(nn.Module):
-    
-    def __init__(self, num_label: int, d_model: int, emb_dim: int):
+class Swish(nn.Module):
+    def forward(self, x):
+        return x * torch.sigmoid(x)
+
+
+class TimeEmbedding(nn.Module):
+    def __init__(self, T, d_model, dim):
         assert d_model % 2 == 0
         super().__init__()
-        self.emb_dim = emb_dim
-        self.emb = nn.Sequential(
-            nn.Embedding(num_embeddings=num_label + 1, embedding_dim=d_model),
-            nn.Linear(d_model, emb_dim),
-            nn.SiLU(),
-            nn.Linear(emb_dim, emb_dim)
-        )
-        
-    def forward(self, context: torch.Tensor) -> torch.Tensor:
-        return self.emb(context)
-    
-    def __len__(self):
-        return self.emb_dim
-    
+        emb = torch.arange(0, d_model, step=2) / d_model * math.log(10000)
+        emb = torch.exp(-emb)
+        pos = torch.arange(T).float()
+        emb = pos[:, None] * emb[None, :]
+        assert list(emb.shape) == [T, d_model // 2]
+        emb = torch.stack([torch.sin(emb), torch.cos(emb)], dim=-1)
+        assert list(emb.shape) == [T, d_model // 2, 2]
+        emb = emb.view(T, d_model)
 
+        self.timembedding = nn.Sequential(
+            nn.Embedding.from_pretrained(emb, freeze=False),
+            nn.Linear(d_model, dim),
+            Swish(),
+            nn.Linear(dim, dim),
+        )
+
+    def forward(self, t):
+        emb = self.timembedding(t)
+        return emb
+    
 class SinusoidalEmbedding(nn.Module):
     def __init__(self, size: int, scale: float = 1.0, device: torch.device = None):
         super().__init__()
@@ -40,6 +50,42 @@ class SinusoidalEmbedding(nn.Module):
 
     def __len__(self):
         return self.size
+    
+
+class ConditionalEmbedding(nn.Module):
+    
+    def __init__(self, num_label: int, d_model: int, emb_dim: int, dropout_prob: float = 0.1):
+        assert d_model % 2 == 0
+        super().__init__()
+        self.emb_dim = emb_dim
+        self.embedding_table = nn.Embedding(num_embeddings=num_label + 1, embedding_dim=d_model)
+        self.emb = nn.Sequential(
+            nn.Linear(d_model, emb_dim),
+            nn.SiLU(),
+            nn.Linear(emb_dim, emb_dim)
+        )
+        self.dropout_prob = dropout_prob
+        self.num_classes = num_label
+        
+    def token_drop(self, labels, force_drop_ids=None):
+        if force_drop_ids is None:
+            drop_ids = torch.rand(labels.shape[0], device=labels.device) < self.dropout_prob
+        else:
+            drop_ids = torch.tensor(force_drop_ids == 1)
+        labels = torch.where(drop_ids, self.num_classes, labels)
+        return labels
+        
+    def forward(self, labels: torch.LongTensor, force_drop_ids=None) -> torch.Tensor:
+        use_dropout = self.dropout_prob > 0
+        if (self.training and use_dropout) or (force_drop_ids is not None):
+            labels = self.token_drop(labels, force_drop_ids)
+        embeddings = self.embedding_table(labels)
+        embeddings = self.emb(embeddings)
+        return embeddings
+    
+    def __len__(self):
+        return self.emb_dim
+    
     
 class LabelEmbedding(nn.Module):
     """
