@@ -123,7 +123,29 @@ class ResBlock(nn.Module):
         h = h + self.shortcut(x)
         h = self.attn(h)
         return h
+    
+    
+class ResBlockImageClassConcat(ResBlock):
+    def __init__(self, in_ch: int, out_ch: int, tdim: int, dropout: float, attn=False):
+        
+        super().__init__(in_ch, out_ch, tdim, dropout, attn)
+            
+        self.bottleneck = nn.Conv2d(out_ch*2, out_ch, 1, stride=1, padding=0)
 
+    def forward(self, x, temb, c1, c2):
+        
+        h = self.block1(x)
+        temb = self.temb_proj(temb)[:, :, None, None]
+        c1 = self.cond_proj(c1)[:, :, None, None]
+        c2 = self.com_proj(c2)[:, :, None, None]
+        c = torch.cat([c1, c2], dim=1).expand(-1, -1, h.shape[-2], h.shape[-1])
+        h = torch.cat([h, c], dim=1)
+        h = self.bottleneck(h)
+        h += temb
+        h = self.block2(h)
+        h = h + self.shortcut(x)
+        h = self.attn(h)
+        return h
 
 class UNet(nn.Module):
     def __init__(self, T, num_labels, num_atr, ch, ch_mult, num_res_blocks, dropout, drop_prob=0.1):
@@ -139,7 +161,7 @@ class UNet(nn.Module):
         for i, mult in enumerate(ch_mult):
             out_ch = ch * mult
             for _ in range(num_res_blocks):
-                self.downblocks.append(ResBlock(in_ch=now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout))
+                self.downblocks.append(ResBlockImageClassConcat(in_ch=now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout))
                 now_ch = out_ch
                 chs.append(now_ch)
             if i != len(ch_mult) - 1:
@@ -147,15 +169,15 @@ class UNet(nn.Module):
                 chs.append(now_ch)
 
         self.middleblocks = nn.ModuleList([
-            ResBlock(now_ch, now_ch, tdim, dropout, attn=False),
-            ResBlock(now_ch, now_ch, tdim, dropout, attn=False),
+            ResBlockImageClassConcat(now_ch, now_ch, tdim, dropout, attn=False),
+            ResBlockImageClassConcat(now_ch, now_ch, tdim, dropout, attn=False),
         ])
 
         self.upblocks = nn.ModuleList()
         for i, mult in reversed(list(enumerate(ch_mult))):
             out_ch = ch * mult
             for _ in range(num_res_blocks + 1):
-                self.upblocks.append(ResBlock(in_ch=chs.pop() + now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout, attn=False))
+                self.upblocks.append(ResBlockImageClassConcat(in_ch=chs.pop() + now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout, attn=False))
                 now_ch = out_ch
             if i != 0:
                 self.upblocks.append(UpSample(now_ch))
@@ -178,17 +200,18 @@ class UNet(nn.Module):
         h = self.head(x)
         hs = [h]
         for layer in self.downblocks:
-            h = layer(h, temb, cemb, cemb1, force_drop_ids=force_drop_ids)
+            h = layer(h, temb, cemb, cemb1)
             hs.append(h)
         # Middle
         for layer in self.middleblocks:
-            h = layer(h, temb, cemb, cemb1, force_drop_ids=force_drop_ids)
+            h = layer(h, temb, cemb, cemb1)
         # Upsampling
         for layer in self.upblocks:
             if isinstance(layer, ResBlock):
                 h = torch.cat([h, hs.pop()], dim=1)
-            h = layer(h, temb, cemb, cemb1, force_drop_ids=force_drop_ids)
+            h = layer(h, temb, cemb, cemb1)
         h = self.tail(h)
 
         assert len(hs) == 0
         return h
+    

@@ -30,13 +30,13 @@ def main(args):
         config={
             "learning_rate": args.lr,
             "epochs": args.epochs,
-            "dataset": "2DPoints",
+            "dataset": args.data.split('/')[-1],
             "architecture": "classifier-free conditional DDPM",
             "num_res_blocks": args.num_res_blocks,
             "img_size": args.img_size,
             "batch_size": args.batch_size,
             "T": args.num_timestep,
-            "ch_mult": [1, 2, 2, 2]
+            "ch_mult": [1, 2, 2, 4]
         },
         job_type="training"
     )
@@ -149,11 +149,11 @@ def main(args):
             save_image(x0, os.path.join('result', args.exp, f'epoch_{epoch}.png'))
         
             # log image
-            x0 = x0.permute(0, 2, 1, 3)
-            x0 = x_i.cpu().detach().numpy()
+            x0 = x0.permute(0, 2, 3, 1)
+            x0 = x0.cpu().detach().numpy()
             
             images = [x0[i, :, :, :] for i in range(n_samples)]
-            wandb.log({f"evalution epoch {epoch}": images})
+            wandb.log({f"evalution epoch {epoch}": [wandb.Image(image) for image in images]})
             
             # save model
             save_root = os.path.join('checkpoints', args.exp)
