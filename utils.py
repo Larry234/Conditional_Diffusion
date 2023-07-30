@@ -387,4 +387,49 @@ def get_scheduler(
         optimizer, num_warmup_steps=num_warmup_steps, num_training_steps=num_training_steps, last_epoch=last_epoch
     )
 
+
+def get_model(args):
+    if args.arch == "unet":
+        from models.unet import UNet
+        model = UNet(
+            T=args.num_timestep,
+            num_labels=args.num_condition[0],
+            num_atr=args.num_condition[1],
+            ch=args.emb_size,
+            ch_mult=(1,2,3,4),
+            num_res_blocks=args.num_res_blocks,
+            dropout=0.15,
+        )
+    elif args.arch == 'unetic':
+        from models.unet import UNetIC
+        model = UNet(
+            T=args.num_timestep,
+            num_labels=args.num_condition[0],
+            num_atr=args.num_condition[1],
+            ch=args.emb_size,
+            ch_mult=(1,2,3,4),
+            num_res_blocks=args.num_res_blocks,
+            dropout=0.15,
+        )
+    elif args.arch == "unetattention":
+        from models.unet import UNetAttention
+        model = UNetAttention(
+            T=args.num_timestep,
+            image_size=args.img_size,
+            in_channels=3,
+            model_channels=args.emb_size,
+            out_channels=3,
+            num_res_blocks=args.num_res_blocks,
+            attention_resolutions=[8,4,2],
+            dropout=0.15,
+            channel_mult=(1,2,3,4),
+            num_classes=args.num_condition[0],
+            num_atrs=args.num_condition[1],
+            num_heads=4,
+            use_spatial_transformer=True,
+        )
+    
+    return model
+    
+    
     

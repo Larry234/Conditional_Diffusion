@@ -152,5 +152,73 @@ class TextImageProjection(nn.Module):
         text_embeds = self.text_proj(text_embeds)
 
         return torch.cat([image_text_embeds, text_embeds], dim=1)
+    
+# class UNetIC(nn.Module):
+#     def __init__(self, T, num_labels, num_atr, ch, ch_mult, num_res_blocks, dropout, drop_prob=0.1):
+#         super().__init__()
+#         tdim = ch * 4
+#         self.time_embedding = TimeEmbedding(T, ch, tdim)
+#         self.cond_embedding = ConditionalEmbedding(num_labels, ch, tdim, drop_prob)
+#         self.com_embedding = ConditionalEmbedding(num_atr, ch, tdim, drop_prob)
+#         self.head = nn.Conv2d(3, ch, kernel_size=3, stride=1, padding=1)
+#         self.downblocks = nn.ModuleList()
+#         chs = [ch]  # record output channel when dowmsample for upsample
+#         now_ch = ch
+#         for i, mult in enumerate(ch_mult):
+#             out_ch = ch * mult
+#             for _ in range(num_res_blocks):
+#                 self.downblocks.append(ResBlockImageClassConcat(in_ch=now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout))
+#                 now_ch = out_ch
+#                 chs.append(now_ch)
+#             if i != len(ch_mult) - 1:
+#                 self.downblocks.append(DownSample(now_ch))
+#                 chs.append(now_ch)
+
+#         self.middleblocks = nn.ModuleList([
+#             ResBlockImageClassConcat(now_ch, now_ch, tdim, dropout, attn=False),
+#             ResBlockImageClassConcat(now_ch, now_ch, tdim, dropout, attn=False),
+#         ])
+
+#         self.upblocks = nn.ModuleList()
+#         for i, mult in reversed(list(enumerate(ch_mult))):
+#             out_ch = ch * mult
+#             for _ in range(num_res_blocks + 1):
+#                 self.upblocks.append(ResBlockImageClassConcat(in_ch=chs.pop() + now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout, attn=False))
+#                 now_ch = out_ch
+#             if i != 0:
+#                 self.upblocks.append(UpSample(now_ch))
+#         assert len(chs) == 0
+
+#         self.tail = nn.Sequential(
+#             nn.GroupNorm(32, now_ch),
+#             Swish(),
+#             nn.Conv2d(now_ch, 3, 3, stride=1, padding=1)
+#         )
+ 
+
+#     def forward(self, x, t, labels, labels_1, force_drop_ids=None):
+#         # Timestep embedding
+#         temb = self.time_embedding(t)
+#         cemb = self.cond_embedding(labels, force_drop_ids=force_drop_ids)
+#         cemb1 = self.com_embedding(labels_1, force_drop_ids=force_drop_ids)
+        
+#         # Downsampling
+#         h = self.head(x)
+#         hs = [h]
+#         for layer in self.downblocks:
+#             h = layer(h, temb, cemb, cemb1)
+#             hs.append(h)
+#         # Middle
+#         for layer in self.middleblocks:
+#             h = layer(h, temb, cemb, cemb1)
+#         # Upsampling
+#         for layer in self.upblocks:
+#             if isinstance(layer, ResBlock):
+#                 h = torch.cat([h, hs.pop()], dim=1)
+#             h = layer(h, temb, cemb, cemb1)
+#         h = self.tail(h)
+
+#         assert len(hs) == 0
+#         return h
 
     
