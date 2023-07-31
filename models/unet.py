@@ -204,11 +204,11 @@ class UNet(nn.Module):
             if i != len(ch_mult) - 1:
                 self.downblocks.append(TimestepEmbedSequential(DownSample(now_ch)))
                 chs.append(now_ch)
-
-        self.middleblocks = TimestepEmbedSequential([
+                
+        self.middleblocks = nn.ModuleList(TimestepEmbedSequential(
             ResBlock(now_ch, now_ch, tdim, dropout, attn=False),
             ResBlock(now_ch, now_ch, tdim, dropout, attn=False),
-        ])
+        ))
 
         self.upblocks = nn.ModuleList()
         for i, mult in reversed(list(enumerate(ch_mult))):

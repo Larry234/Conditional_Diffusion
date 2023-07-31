@@ -425,7 +425,7 @@ def get_model(args):
             channel_mult=(1,2,3,4),
             num_classes=args.num_condition[0],
             num_atrs=args.num_condition[1],
-            num_heads=4,
+            num_heads=args.num_heads,
             use_spatial_transformer=True,
         )
     

@@ -15,10 +15,10 @@ import wandb
 from accelerate import Accelerator
 
 from models.embedding import *
-from models.unet import UNet
+from models.unet import UNetAttention
 from models.engine import ConditionalGaussianDiffusionTrainer, DDIMSampler
 from datasets import CustomImageDataset
-from utils import GradualWarmupScheduler
+from utils import GradualWarmupScheduler, get_model
 
 
 
@@ -31,12 +31,12 @@ def main(args):
             "learning_rate": args.lr,
             "epochs": args.epochs,
             "dataset": args.data.split('/')[-1],
-            "architecture": "classifier-free conditional DDPM",
+            "architecture": "classifier-free conditional DDIM",
             "num_res_blocks": args.num_res_blocks,
             "img_size": args.img_size,
             "batch_size": args.batch_size,
             "T": args.num_timestep,
-            "ch_mult": [1, 2, 2, 4]
+            "ch_mult": [1, 2, 3, 4]
         },
         job_type="training"
     )
@@ -53,21 +53,31 @@ def main(args):
     ])
     
     train_ds = CustomImageDataset(root=args.data, transform=transform)
+    objs, atrs = train_ds.get_class()
+    id2obj = {v: k for k, v in objs.items()}
+    id2atr = {v: k for k, v in atrs.items()}
     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     
     # generate samples for each class in evaluation
     n_samples = args.num_condition[0] * args.num_condition[1]
     
     # define models
-    model = UNet(
-        T = args.num_timestep,
-        num_labels = args.num_condition[0],
-        num_atr = args.num_condition[1],
-        ch = args.emb_size,
-        ch_mult=[1, 2, 2, 2],
-        num_res_blocks = args.num_res_blocks,
-        dropout=0.15,
-    )
+    model = get_model(args)
+#     model = UNetAttention(
+#         T=args.num_timestep,
+#         image_size=args.img_size,
+#         in_channels=3,
+#         model_channels=args.emb_size,
+#         out_channels=3,
+#         num_res_blocks=args.num_res_blocks,
+#         attention_resolutions=[8,4,2],
+#         dropout=0.15,
+#         channel_mult=(1,2,3,4),
+#         num_classes=args.num_condition[0],
+#         num_atrs=args.num_condition[1],
+#         num_head_channels=32,
+#         use_spatial_transformer=True,
+#     )
     
     trainer = ConditionalGaussianDiffusionTrainer(model, args.beta, args.num_timestep)
     
@@ -112,7 +122,7 @@ def main(args):
             
             loss = trainer(x, c1, c2).sum() / B ** 2.
             accelerator.backward(loss)
-            torch.nn.utils.clip_grad_norm(model.parameters(), 1)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
             
             # log training process
             wandb.log({"loss": loss.item()})
@@ -151,9 +161,9 @@ def main(args):
             # log image
             x0 = x0.permute(0, 2, 3, 1)
             x0 = x0.cpu().detach().numpy()
-            
-            images = [x0[i, :, :, :] for i in range(n_samples)]
-            wandb.log({f"evalution epoch {epoch}": [wandb.Image(image) for image in images]})
+            c1, c2 = c1.cpu().detach().numpy(), c2.cpu().detach().numpy()
+            images = [(f"{id2obj[c1[i]]} {id2atr[c2[i]]}", x0[i, :, :, :]) for i in range(n_samples)]
+            wandb.log({f"evalution epoch {epoch}": [wandb.Image(image, caption=label) for label, image in images]})
             
             # save model
             save_root = os.path.join('checkpoints', args.exp)
@@ -174,25 +184,40 @@ def main(args):
 if __name__ == '__main__':
     
     parser = argparse.ArgumentParser()
-
-    parser.add_argument('--data', type=str, help='dataset location')
+    
+    # General Hyperparameters 
+    parser.add_argument('--arch', type=str, default='unet', help='unet architecture')
+    parser.add_argument('--data', type=str, default='/root/notebooks/nfs/work/dataset/conditional_ut', help='dataset location')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--batch_size', type=int, default=16, help='batch size')
-    parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
     parser.add_argument('--epochs', type=int, default=100, help='total training epochs')
+    parser.add_argument('--eval_interval', type=int, default=10, help='Frequency of evaluation')
+    
+    # Data hyperparameters
+    parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
     parser.add_argument('--img_size', type=int, default=128, help='training image size')
-    parser.add_argument('--num_res_blocks', type=int, default=3, help='number of residual blocks in unet')
+    
+    # Diffusion hyperparameters
     parser.add_argument('--num_timestep', type=int, default=50, help='number of timesteps')
     parser.add_argument('--beta', type=Tuple[float, float], default=(0.0001, 0.02), help='beta start, beta end')
-    parser.add_argument('--emb_size', type=int, default=10, help='embedding output dimension')
     parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'quadratic'])
-    parser.add_argument('--w', type=float, default=1.8, help='hyperparameters for classifier-free guidance strength')
-    parser.add_argument('--num_condition', type=int, nargs='+', help='number of classes in each condition')
-    parser.add_argument('--eval_interval', type=int, default=10, help='Frequency of evaluation')
+    parser.add_argument('--eta', type=float, default=0., help='ddim parameter when sampling')
     parser.add_argument('--exp', type=str, default='exp', help='experiment directory name')
     parser.add_argument('--sample_method', type=str, default='ddim', choices=['ddpm', 'ddim'], help='sampling method')
-    parser.add_argument('--eta', type=float, default=0., help='ddim parameter when sampling')
     parser.add_argument('--steps', type=int, default=100, help='decreased timesteps using ddim')
+    
+    # UNet hyperparameters
+    parser.add_argument('--num_res_blocks', type=int, default=3, help='number of residual blocks in unet')
+    parser.add_argument('--emb_size', type=int, default=10, help='embedding output dimension')
+    parser.add_argument('--w', type=float, default=1.8, help='hyperparameters for classifier-free guidance strength')
+    parser.add_argument('--num_condition', type=int, nargs='+', help='number of classes in each condition')
+    
+    # Transformer hyperparameters(Optional)
+    parser.add_argument('--context_dim', type=int, default=512, help='q, k, v dimension in attention layer')
+    parser.add_argument('--num_head_channels', type=int, default=32, help='attention head channels')
+    parser.add_argument('--num_heads', type=int, default=-1, help='number of attention heads, either specify head_channels or num_heads')
+    parser.add_argument('--channel_mult', type=list, default=[1, 2, 3, 4], help='width of unet model')
+    
     
     args = parser.parse_args()
     

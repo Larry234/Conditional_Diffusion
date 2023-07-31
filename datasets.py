@@ -54,7 +54,8 @@ class CustomImageDataset(Dataset):
         self.root = root
         self.transform = transform
         self.image_path = glob(os.path.join(root, '**', '*.jpg'))
-        self.label_dict = {}
+        self.obj_dict = {}
+        self.atr_dict = {}
         obj = []
         atr = []
         labels = [label.split(' ') for label in os.listdir(root)]
@@ -67,11 +68,11 @@ class CustomImageDataset(Dataset):
         atr = list(set(atr))
          
         for i in range(len(obj)):
-            self.label_dict[obj[i]] = i
+            self.obj_dict[obj[i]] = i
         
         for i in range(len(atr)):
-            self.label_dict[atr[i]] = i
-        
+            self.atr_dict[atr[i]] = i
+            
     def __len__(self):
         return len(self.image_path)
 
@@ -85,7 +86,10 @@ class CustomImageDataset(Dataset):
         if self.transform is not None:
             image = self.transform(image)
         
-        return image, torch.tensor(self.label_dict[label[0]], dtype=torch.int64), torch.tensor(self.label_dict[label[1]], dtype=torch.int64)
+        return image, torch.tensor(self.obj_dict[label[0]], dtype=torch.int64), torch.tensor(self.atr_dict[label[1]], dtype=torch.int64)
+    
+    def get_class(self):
+        return self.obj_dict, self.atr_dict
     
     
     
