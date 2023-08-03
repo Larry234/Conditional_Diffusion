@@ -396,18 +396,18 @@ def get_model(args):
             num_labels=args.num_condition[0],
             num_atr=args.num_condition[1],
             ch=args.emb_size,
-            ch_mult=(1,2,3,4),
+            ch_mult=args.channel_mult,
             num_res_blocks=args.num_res_blocks,
             dropout=0.15,
         )
     elif args.arch == 'unetic':
         from models.unet import UNetIC
-        model = UNet(
+        model = UNetIC(
             T=args.num_timestep,
             num_labels=args.num_condition[0],
             num_atr=args.num_condition[1],
             ch=args.emb_size,
-            ch_mult=(1,2,3,4),
+            ch_mult=args.channel_mult,
             num_res_blocks=args.num_res_blocks,
             dropout=0.15,
         )
@@ -422,7 +422,7 @@ def get_model(args):
             num_res_blocks=args.num_res_blocks,
             attention_resolutions=[8,4,2],
             dropout=0.15,
-            channel_mult=(1,2,3,4),
+            channel_mult=args.channel_mult,
             num_classes=args.num_condition[0],
             num_atrs=args.num_condition[1],
             num_heads=args.num_heads,
