@@ -17,7 +17,7 @@ from accelerate import Accelerator
 from models.embedding import *
 from models.unet import UNetAttention
 from models.engine import ConditionalGaussianDiffusionTrainer, DDIMSampler
-from datasets import CustomImageDataset
+from dataset import CustomImageDataset
 from utils import GradualWarmupScheduler, get_model
 
 
@@ -31,12 +31,12 @@ def main(args):
             "learning_rate": args.lr,
             "epochs": args.epochs,
             "dataset": args.data.split('/')[-1],
-            "architecture": "classifier-free conditional DDIM",
             "num_res_blocks": args.num_res_blocks,
             "img_size": args.img_size,
             "batch_size": args.batch_size,
             "T": args.num_timestep,
-            "ch_mult": [1, 2, 3, 4]
+            "ch_mult": args.channel_mult,
+            "guidance scale": args.w
         },
         job_type="training"
     )
@@ -52,7 +52,7 @@ def main(args):
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
     
-    train_ds = CustomImageDataset(root=args.data, transform=transform)
+    train_ds = CustomImageDataset(root=args.data, transform=transform, ignored=args.ignored)
     objs, atrs = train_ds.get_class()
     id2obj = {v: k for k, v in objs.items()}
     id2atr = {v: k for k, v in atrs.items()}
@@ -63,21 +63,6 @@ def main(args):
     
     # define models
     model = get_model(args)
-#     model = UNetAttention(
-#         T=args.num_timestep,
-#         image_size=args.img_size,
-#         in_channels=3,
-#         model_channels=args.emb_size,
-#         out_channels=3,
-#         num_res_blocks=args.num_res_blocks,
-#         attention_resolutions=[8,4,2],
-#         dropout=0.15,
-#         channel_mult=(1,2,3,4),
-#         num_classes=args.num_condition[0],
-#         num_atrs=args.num_condition[1],
-#         num_head_channels=32,
-#         use_spatial_transformer=True,
-#     )
     
     trainer = ConditionalGaussianDiffusionTrainer(model, args.beta, args.num_timestep)
     
@@ -217,6 +202,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_head_channels', type=int, default=32, help='attention head channels')
     parser.add_argument('--num_heads', type=int, default=-1, help='number of attention heads, either specify head_channels or num_heads')
     parser.add_argument('--channel_mult', type=list, default=[1, 2, 3, 4], help='width of unet model')
+    parser.add_argument('--ignored', type=str, default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
     
     
     args = parser.parse_args()
