@@ -202,7 +202,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_head_channels', type=int, default=32, help='attention head channels')
     parser.add_argument('--num_heads', type=int, default=-1, help='number of attention heads, either specify head_channels or num_heads')
     parser.add_argument('--channel_mult', type=list, default=[1, 2, 3, 4], help='width of unet model')
-    parser.add_argument('--ignored', type=str, default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
+    parser.add_argument('--ignored', type=list, default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
     
     
     args = parser.parse_args()

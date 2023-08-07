@@ -53,9 +53,14 @@ class CustomImageDataset(Dataset):
     def __init__(self, root, transform=None, ignored=None):
         self.root = root
         self.transform = transform
-        self.image_path = glob(os.path.join(root, '**', '*.jpg'))
+        images = glob(os.path.join(root, '**', '*.jpg'))
+        self.image_path = []
         if ignored != None:
-            self.image_path = [f for f in self.image_path if ignored not in f]
+            for image in images:
+                cat = image.split('/')[-2]
+                if cat not in ignored:
+                    self.image_path.append(image)
+
         self.obj_dict = {}
         self.atr_dict = {}
         obj = []
