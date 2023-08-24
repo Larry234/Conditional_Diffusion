@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import models, transforms
 from torchvision.utils import save_image
+from torchvision.datasets import ImageFolder
 
 from typing import Tuple
 import argparse
@@ -16,7 +17,7 @@ from accelerate import Accelerator
 
 from models.embedding import *
 from models.unet import UNetAttention
-from models.engine import ConditionalGaussianDiffusionTrainer, DDIMSampler
+from models.engine import GaussianDiffusionTrainer, DDIMSamplerOneCond
 from dataset import CustomImageDataset
 from utils import GradualWarmupScheduler, get_model
 
@@ -52,24 +53,22 @@ def main(args):
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
     
-    train_ds = CustomImageDataset(root=args.data, transform=transform, ignored=args.ignored)
-    objs, atrs = train_ds.get_class()
-    id2obj = {v: k for k, v in objs.items()}
-    id2atr = {v: k for k, v in atrs.items()}
+    train_ds = ImageFolder(root=args.data, transform=transform)
+    idx_to_class = {v: k for k, v in train_ds.class_to_idx.items()}
     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     
     # generate samples for each class in evaluation
-    n_samples = args.num_condition[0] * args.num_condition[1]
+    n_samples = args.num_condition
     
     # define models
     model = get_model(args)
     
-    trainer = ConditionalGaussianDiffusionTrainer(model, args.beta, args.num_timestep)
+    trainer = GaussianDiffusionTrainer(model, args.beta, args.num_timestep)
     
     # optimizer and learning rate scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
     
-    sampler = DDIMSampler(
+    sampler = DDIMSamplerOneCond(
         model,
         beta=args.beta,
         T=args.num_timestep,
@@ -100,13 +99,12 @@ def main(args):
         progress_bar = tqdm(dataloader, desc=f'Epoch {epoch}')
         
         # train
-        for x, c1, c2 in progress_bar:
+        for x, c1 in progress_bar:
             x = x.to(device)
             c1 = c1.to(device)
-            c2 = c2.to(device)
             B = x.size()[0]
             
-            loss = trainer(x, c1, c2).sum() / B ** 2.
+            loss = trainer(x, c1).sum() / B ** 2.
             accelerator.backward(loss)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 1)
             
@@ -131,14 +129,12 @@ def main(args):
 
             # create conditions of each class
             # create conditions like [0,0,0,1,1,1, ...] [0,1,2,3,0,1,2,3, ...]
-            c1 = torch.arange(0, args.num_condition[0])
-            c2 = torch.arange(0, args.num_condition[1])
-            c1 = c1.repeat(n_samples // args.num_condition[0], 1).permute(1, 0).reshape(-1)
-            c2 = c2.repeat(n_samples // args.num_condition[1])
+            c1 = torch.arange(0, args.num_condition)
+            c1 = c1.repeat(n_samples // args.num_condition, 1).permute(1, 0).reshape(-1)
 
-            c1, c2 = c1.to(device), c2.to(device)
+            c1 = c1.to(device)
 
-            x0 = sampler(x_i, c1, c2, steps=args.steps)
+            x0 = sampler(x_i, c1, steps=args.steps)
             
             # save image
             os.makedirs(os.path.join('result', args.exp), exist_ok=True)
@@ -147,8 +143,8 @@ def main(args):
             # log image
             x0 = x0.permute(0, 2, 3, 1)
             x0 = x0.cpu().detach().numpy()
-            c1, c2 = c1.cpu().detach().numpy(), c2.cpu().detach().numpy()
-            images = [(f"{id2obj[c1[i]]} {id2atr[c2[i]]}", x0[i, :, :, :]) for i in range(n_samples)]
+            c1 = c1.cpu().detach().numpy()
+            images = [(f"{idx_to_class[i]}", x0[i, :, :, :]) for i in range(n_samples)]
             wandb.log({f"evalution epoch {epoch}": [wandb.Image(image, caption=label) for label, image in images]})
             
             # save model
@@ -159,8 +155,6 @@ def main(args):
                 'epoch': epoch,
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'id2obj': id2obj,
-                'id2atr': id2atr,
             }, os.path.join(save_root, f"model_{epoch}.pth"))
                 
                 
@@ -198,7 +192,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_res_blocks', type=int, default=3, help='number of residual blocks in unet')
     parser.add_argument('--emb_size', type=int, default=10, help='embedding output dimension')
     parser.add_argument('--w', type=float, default=1.8, help='hyperparameters for classifier-free guidance strength')
-    parser.add_argument('--num_condition', type=int, nargs='+', help='number of classes in each condition')
+    parser.add_argument('--num_condition', type=int, help='number of classes in each condition')
     
     # Transformer hyperparameters(Optional)
     parser.add_argument('--context_dim', type=int, default=512, help='q, k, v dimension in attention layer')
