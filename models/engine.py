@@ -180,7 +180,7 @@ class DDPMSampler(nn.Module):
         # generate T steps of beta
         if schedule == "linear":
             beta_t = torch.linspace(*beta, T, dtype=torch.float32)
-        elif scheduler == "cosine":
+        elif schedule == "cosine":
             beta_t = betas_for_alpha_bar(num_diffusion_timesteps=T)
         self.register_buffer("beta_t", beta_t)
 
@@ -264,7 +264,7 @@ class DDIMSampler(nn.Module):
         # generate T steps of beta
         if schedule == "linear":
             beta_t = torch.linspace(*beta, T, dtype=torch.float32)
-        elif scheduler == "cosine":
+        elif schedule == "cosine":
             beta_t = betas_for_alpha_bar(num_diffusion_timesteps=T)
         # calculate the cumulative product of $\alpha$ , named $\bar{\alpha_t}$ in paper
         alpha_t = 1.0 - beta_t
@@ -356,7 +356,7 @@ class DDIMSamplerOneCond(nn.Module):
         # generate T steps of beta
         if schedule == "linear":
             beta_t = torch.linspace(*beta, T, dtype=torch.float32)
-        elif scheduler == "cosine":
+        elif schedule == "cosine":
             beta_t = betas_for_alpha_bar(num_diffusion_timesteps=T)
         # calculate the cumulative product of $\alpha$ , named $\bar{\alpha_t}$ in paper
         alpha_t = 1.0 - beta_t

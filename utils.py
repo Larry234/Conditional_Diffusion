@@ -19,6 +19,7 @@ from enum import Enum
 from typing import Optional, Union, Tuple
 
 from torch.optim import Optimizer
+from torch.optim import AdamW
 import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 
@@ -451,5 +452,27 @@ def get_model(args):
     
     return model
     
+
+
+def get_optimizer(model, args):
+    if args.fix_emb:
+        param_list = []
+        for n, p in model.label_emb.named_parameters():
+            p.requires_grad = False
+
+        for n, p in model.atr_emb.named_parameters():
+            p.requires_grad = False
+
+        param_list = []
+        for n, p in model.named_parameters():
+            if "label_emb" in n or "atr_emb" in n:
+                continue
+            param_list.append({'params': p, 'lr': 0.001, 'weight_decay': args.weight_decay})
+
+            optimizer = AdamW(param_list)
+            return optimizer
+    
+    return AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
+
     
     

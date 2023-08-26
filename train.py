@@ -15,10 +15,9 @@ import wandb
 from accelerate import Accelerator
 
 from models.embedding import *
-from models.unet import UNetAttention
 from models.engine import ConditionalGaussianDiffusionTrainer, DDIMSampler
 from dataset import CustomImageDataset
-from utils import GradualWarmupScheduler, get_model
+from utils import GradualWarmupScheduler, get_model, get_optimizer
 
 
 
@@ -67,14 +66,13 @@ def main(args):
     trainer = ConditionalGaussianDiffusionTrainer(model, args.beta, args.num_timestep)
     
     # optimizer and learning rate scheduler
-    optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr)
+    optimizer = get_optimizer(model, args)
     
     sampler = DDIMSampler(
         model,
         beta=args.beta,
         T=args.num_timestep,
-        w=args.w,
-        schedule=args.beta_schedule
+        w=args.w
     )
     
     cosineScheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -159,8 +157,6 @@ def main(args):
                 'epoch': epoch,
                 'model': model.state_dict(),
                 'optimizer': optimizer.state_dict(),
-                'id2obj': id2obj,
-                'id2atr': id2atr,
             }, os.path.join(save_root, f"model_{epoch}.pth"))
                 
                 
@@ -177,26 +173,29 @@ if __name__ == '__main__':
     parser.add_argument('--arch', type=str, default='unet', help='unet architecture')
     parser.add_argument('--data', type=str, default='/root/notebooks/nfs/work/dataset/conditional_ut', help='dataset location')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
+    parser.add_argument('--weight_decay', type=float, default=1e-4, help='weight decay coefficient')
     parser.add_argument('--batch_size', type=int, default=16, help='batch size')
     parser.add_argument('--epochs', type=int, default=100, help='total training epochs')
     parser.add_argument('--eval_interval', type=int, default=10, help='Frequency of evaluation')
+    parser.add_argument('--only_table', action='store_true', help="only use embedding table for class embedding")
+    parser.add_argument('--fix_emb', action='store_true', help='Freeze embedding table wieght to create fixed label embedding')
     
     # Data hyperparameters
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
     parser.add_argument('--img_size', type=int, default=128, help='training image size')
     
     # Diffusion hyperparameters
-    parser.add_argument('--num_timestep', type=int, default=50, help='number of timesteps')
+    parser.add_argument('--num_timestep', type=int, default=1000, help='number of timesteps')
     parser.add_argument('--beta', type=Tuple[float, float], default=(0.0001, 0.02), help='beta start, beta end')
-    parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'quadratic', 'cosine'])
+    parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'quadratic'])
     parser.add_argument('--eta', type=float, default=0., help='ddim parameter when sampling')
     parser.add_argument('--exp', type=str, default='exp', help='experiment directory name')
     parser.add_argument('--sample_method', type=str, default='ddim', choices=['ddpm', 'ddim'], help='sampling method')
     parser.add_argument('--steps', type=int, default=100, help='decreased timesteps using ddim')
     
     # UNet hyperparameters
-    parser.add_argument('--num_res_blocks', type=int, default=3, help='number of residual blocks in unet')
-    parser.add_argument('--emb_size', type=int, default=10, help='embedding output dimension')
+    parser.add_argument('--num_res_blocks', type=int, default=2, help='number of residual blocks in unet')
+    parser.add_argument('--emb_size', type=int, default=128, help='embedding output dimension')
     parser.add_argument('--w', type=float, default=1.8, help='hyperparameters for classifier-free guidance strength')
     parser.add_argument('--num_condition', type=int, nargs='+', help='number of classes in each condition')
     
@@ -205,9 +204,9 @@ if __name__ == '__main__':
     parser.add_argument('--num_head_channels', type=int, default=32, help='attention head channels')
     parser.add_argument('--num_heads', type=int, default=-1, help='number of attention heads, either specify head_channels or num_heads')
     parser.add_argument('--channel_mult', type=list, default=[1, 2, 3, 4], help='width of unet model')
-    parser.add_argument('--ignored', type=str, default=None, nargs='+', help='exclude folder when loading dataset, for compositional zero-shot generation')
-    parser.add_argument('--only_table', action='store_true', help="only use embedding table for class embedding")
-
+    parser.add_argument('--ignored', type=str, default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
+    
+    
     args = parser.parse_args()
     
     main(args)
