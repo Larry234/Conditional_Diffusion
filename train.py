@@ -15,7 +15,6 @@ import wandb
 from accelerate import Accelerator
 
 from models.embedding import *
-from models.unet import UNetAttention
 from models.engine import ConditionalGaussianDiffusionTrainer, DDIMSampler
 from dataset import CustomImageDataset
 from utils import GradualWarmupScheduler, get_model
