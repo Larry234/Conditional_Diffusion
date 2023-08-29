@@ -1,8 +1,9 @@
 import numpy as np
 import torch
 from PIL import Image
+from datasets import load_dataset
 
-from torch.utils.data import Dataset, TensorDataset
+from torch.utils.data import Dataset, TensorDataset, DataLoader
 
 from glob import glob
 import os
@@ -60,6 +61,8 @@ class CustomImageDataset(Dataset):
                 cat = image.split('/')[-2]
                 if cat not in ignored:
                     self.image_path.append(image)
+        else:
+            self.image_path = images
 
         self.obj_dict = {}
         self.atr_dict = {}
@@ -97,6 +100,48 @@ class CustomImageDataset(Dataset):
     
     def get_class(self):
         return self.obj_dict, self.atr_dict
+    
+    
+    
+class Phison:
+    
+    def __init__(self, transform):
+        self.cond2idx = {'good': 0, 'shift': 1, 'broke': 2, 'short': 3} 
+        self.comp2idx = {'C0201': 0, 'LED0603': 1, 'SOT23': 2, 'TVS523': 3, 'R0805': 4, 'BGA4P': 5}
+
+        self.idx2cond = {v: k for k, v in self.cond2idx.items()}
+        self.idx2comp = {v: k for k, v in self.comp2idx.items()}
+        
+        self.transform = transform
+        
+        ds = load_dataset("barry556652/special_500", split="train")
+        self.image_column, self.caption_column = ds.column_names
+        self.ds = ds.with_transform(self.preprocess_train)
+    
+    def preprocess_train(self, examples):
+        labels = [caption.split(" ") for caption in examples[self.caption_column]]
+        images = [image.convert("RGB") for image in examples[self.image_column]]
+        examples["pixel_values"] = [self.transform(image) for image in images]
+        examples["condition_label"] = [torch.tensor(self.cond2idx[c[0]], dtype=torch.int64) for c in labels]
+        examples["class_label"] = [torch.tensor(self.comp2idx[c[1]], dtype=torch.int64) for c in labels]
+        return examples
+    
+    def collate_fn(self, examples):
+        pixel_values = torch.stack([example["pixel_values"] for example in examples])
+        pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
+        class_label = torch.stack([example["class_label"] for example in examples])
+        condition_label = torch.stack([example["condition_label"] for example in examples])
+        return {"pixel_values": pixel_values, "condition_label": condition_label, "class_label": class_label}
+    
+    def get_loader(self, batch_size=64, num_workers=4):
+        loader = DataLoader(self.ds, shuffle=True, batch_size=batch_size, collate_fn=self.collate_fn, num_workers=num_workers)
+        return loader
+    
+    def get_idx2cond(self):
+        return self.idx2cond
+    
+    def get_idx2comp(self):
+        return self.idx2comp
     
     
     

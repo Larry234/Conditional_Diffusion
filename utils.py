@@ -394,8 +394,8 @@ def get_model(args):
         from models.unet import UNet
         model = UNet(
             T=args.num_timestep,
-            num_labels=args.num_condition[0],
-            num_atr=args.num_condition[1],
+            num_labels=args.num_condition[1],
+            num_atr=args.num_condition[0],
             ch=args.emb_size,
             ch_mult=args.channel_mult,
             num_res_blocks=args.num_res_blocks,
@@ -405,8 +405,8 @@ def get_model(args):
         from models.unet import UNetIC
         model = UNetIC(
             T=args.num_timestep,
-            num_labels=args.num_condition[0],
-            num_atr=args.num_condition[1],
+            num_labels=args.num_condition[1],
+            num_atr=args.num_condition[0],
             ch=args.emb_size,
             ch_mult=args.channel_mult,
             num_res_blocks=args.num_res_blocks,
@@ -424,8 +424,8 @@ def get_model(args):
             attention_resolutions=[8,4,2],
             dropout=0.15,
             channel_mult=args.channel_mult,
-            num_classes=args.num_condition[0],
-            num_atrs=args.num_condition[1],
+            num_classes=args.num_condition[1],
+            num_atrs=args.num_condition[0],
             num_heads=args.num_heads,
             num_head_channels=args.num_head_channels,
             use_spatial_transformer=True,

@@ -589,8 +589,8 @@ class UNetAttention(nn.Module):
         context = None
         if self.num_classes is not None and self.num_atrs is not None:
             assert c1.shape == (x.shape[0],) and c2.shape == (x.shape[0],)
-            c1 = self.label_emb(c1, force_drop_ids=force_drop_ids)[:, None, :]
-            c2 = self.atr_emb(c2, force_drop_ids=force_drop_ids)[:, None, :]
+            c1 = self.atr_emb(c1, force_drop_ids=force_drop_ids)[:, None, :]
+            c2 = self.label_emb(c2, force_drop_ids=force_drop_ids)[:, None, :]
             context = torch.cat([c1, c2], dim=1)
         h = x.type(self.dtype)
         for module in self.input_blocks:
