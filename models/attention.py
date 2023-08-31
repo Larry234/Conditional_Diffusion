@@ -242,11 +242,11 @@ class SpatialTransformer(nn.Module):
                 for d in range(depth)]
         )
 
-        self.proj_out = zero_module(nn.Conv2d(inner_dim,
-                                              in_channels,
-                                              kernel_size=1,
-                                              stride=1,
-                                              padding=0))
+        self.proj_out = nn.Conv2d(inner_dim,
+                                  in_channels,
+                                  kernel_size=1,
+                                  stride=1,
+                                  padding=0)
 
     def forward(self, x, context=None):
         # note: if no context is given, cross-attention defaults to self-attention

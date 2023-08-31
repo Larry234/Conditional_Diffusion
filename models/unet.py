@@ -19,29 +19,50 @@ class Swish(nn.Module):
     def forward(self, x):
         return x * torch.sigmoid(x)
 
-
-class DownSample(nn.Module):
-    def __init__(self, in_ch):
-        super().__init__()
-        self.c1 = nn.Conv2d(in_ch, in_ch, 3, stride=2, padding=1)
-        self.c2 = nn.Conv2d(in_ch, in_ch, 5, stride=2, padding=2)
-
-    def forward(self, x, emb=None):
-        x = self.c1(x) + self.c2(x)
-        return x
-
-
 class UpSample(nn.Module):
-    def __init__(self, in_ch):
-        super().__init__()
-        self.c = nn.Conv2d(in_ch, in_ch, 3, stride=1, padding=1)
-        self.t = nn.ConvTranspose2d(in_ch, in_ch, 5, 2, 2, 1)
+    """
+    ### Up-sampling layer
+    """
 
-    def forward(self, x, emb=None):
-        _, _, H, W = x.shape
-        x = self.t(x)
-        x = self.c(x)
-        return x
+    def __init__(self, channels: int):
+        """
+        :param channels: is the number of channels
+        """
+        super().__init__()
+        # $3 \times 3$ convolution mapping
+        self.conv = nn.Conv2d(channels, channels, 3, padding=1)
+
+    def forward(self, x: torch.Tensor):
+        """
+        :param x: is the input feature map with shape `[batch_size, channels, height, width]`
+        """
+        # Up-sample by a factor of $2$
+        x = F.interpolate(x, scale_factor=2, mode="nearest")
+        # Apply convolution
+        return self.conv(x)
+
+
+    
+class DownSample(nn.Module):
+    """
+    ## Down-sampling layer
+    """
+
+    def __init__(self, channels: int):
+        """
+        :param channels: is the number of channels
+        """
+        super().__init__()
+        # $3 \times 3$ convolution with stride length of $2$ to down-sample by a factor of $2$
+        self.op = nn.Conv2d(channels, channels, 3, stride=2, padding=1)
+
+    def forward(self, x: torch.Tensor):
+        """
+        :param x: is the input feature map with shape `[batch_size, channels, height, width]`
+        """
+        # Apply convolution
+        return self.op(x)
+
 
 
 class AttnBlock(nn.Module):
