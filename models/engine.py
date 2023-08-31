@@ -132,7 +132,7 @@ class ConditionalGaussianDiffusionTrainer(nn.Module):
 
         # get the gradient
         loss = F.mse_loss(epsilon_theta, epsilon, reduction="none")
-        loss = torch.sum(loss)
+#         loss = torch.sum(loss)
         return loss
     
 class ConditionalGaussianDiffusionTrainerOneCond(nn.Module):

@@ -58,6 +58,7 @@ def main(args):
     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     
     # generate samples for each class in evaluation
+    args.num_condition = len(idx_to_class)
     n_samples = args.num_condition
     
     # define models
