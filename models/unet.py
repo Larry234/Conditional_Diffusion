@@ -407,7 +407,8 @@ class UNetAttention(nn.Module):
         context_dim=None,                 # custom transformer support
         n_embed=None,                     # custom support for prediction of discrete ids into codebook of first stage vq model
         legacy=True,
-        only_table=False
+        only_table=False,
+        concat=False
     ):
         super().__init__()
 #         if use_spatial_transformer:
@@ -439,21 +440,23 @@ class UNetAttention(nn.Module):
         self.num_heads = num_heads
         self.num_head_channels = num_head_channels
         self.predict_codebook_ids = n_embed is not None
+        self.concat = concat
 
         time_embed_dim = model_channels * 4
-        context_dim = time_embed_dim
+        label_embed_dim = time_embed_dim // 2 if self.concat else time_embed_dim
+        context_dim = model_channels * 4
         self.time_embed = TimeEmbedding(T, model_channels, time_embed_dim)
 
         if self.num_classes is not None:
             if only_table:
-                self.label_emb = LabelEmbedding(num_classes, time_embed_dim, drop_prob)
+                self.label_emb = LabelEmbedding(num_classes, label_embed_dim, drop_prob)
             else:
-                self.label_emb = ConditionalEmbedding(num_classes, model_channels, time_embed_dim, drop_prob)
+                self.label_emb = ConditionalEmbedding(num_classes, model_channels, label_embed_dim, drop_prob)
         if self.num_atrs is not None:
             if only_table:
-                self.atr_emb = LabelEmbedding(num_atrs, time_embed_dim, drop_prob)
+                self.atr_emb = LabelEmbedding(num_atrs, label_embed_dim, drop_prob)
             else:
-                self.atr_emb = ConditionalEmbedding(num_atrs, model_channels, time_embed_dim, drop_prob)
+                self.atr_emb = ConditionalEmbedding(num_atrs, model_channels, label_embed_dim, drop_prob)
 
         self.input_blocks = nn.ModuleList(
             [
@@ -612,7 +615,10 @@ class UNetAttention(nn.Module):
             assert c1.shape == (x.shape[0],) and c2.shape == (x.shape[0],)
             c1 = self.atr_emb(c1, force_drop_ids=force_drop_ids)[:, None, :]
             c2 = self.label_emb(c2, force_drop_ids=force_drop_ids)[:, None, :]
-            context = torch.cat([c1, c2], dim=1)
+            if self.concat:
+                context = torch.cat([c1, c2], dim=2)
+            else:
+                context = torch.cat([c1, c2], dim=1)
         h = x.type(self.dtype)
         for module in self.input_blocks:
             h = module(h, emb, context)
