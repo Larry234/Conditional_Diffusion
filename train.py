@@ -198,12 +198,13 @@ if __name__ == '__main__':
     parser.add_argument('--emb_size', type=int, default=128, help='embedding output dimension')
     parser.add_argument('--w', type=float, default=1.8, help='hyperparameters for classifier-free guidance strength')
     parser.add_argument('--num_condition', type=int, nargs='+', help='number of classes in each condition')
+    parser.add_argument('--concat', action="store_true", help="concat label embedding before CA")
     
     # Transformer hyperparameters(Optional)
     parser.add_argument('--context_dim', type=int, default=512, help='q, k, v dimension in attention layer')
     parser.add_argument('--num_head_channels', type=int, default=32, help='attention head channels')
     parser.add_argument('--num_heads', type=int, default=-1, help='number of attention heads, either specify head_channels or num_heads')
-    parser.add_argument('--channel_mult', type=list, default=[1, 2, 3, 4], help='width of unet model')
+    parser.add_argument('--channel_mult', type=list, default=[1, 2, 2, 2], help='width of unet model')
     parser.add_argument('--ignored', type=str, default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
     
     

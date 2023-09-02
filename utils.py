@@ -429,7 +429,8 @@ def get_model(args):
             num_heads=args.num_heads,
             num_head_channels=args.num_head_channels,
             use_spatial_transformer=True,
-            only_table=args.only_table
+            only_table=args.only_table,
+            concat=args.concat
         )
     elif args.arch == "unetattention1c": # unet one condition
         from models.unet import UNetAttentionOneCond
