@@ -33,7 +33,6 @@ def main(args):
             "num_res_blocks": args.num_res_blocks,
             "img_size": args.img_size,
             "batch_size": args.batch_size,
-            "T": args.num_timestep,
             "ch_mult": args.channel_mult,
             "guidance scale": args.w
         },
