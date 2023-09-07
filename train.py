@@ -17,7 +17,7 @@ from accelerate import Accelerator
 from models.embedding import *
 from models.engine import ConditionalGaussianDiffusionTrainer, DDIMSampler
 from dataset import CustomImageDataset
-from utils import GradualWarmupScheduler, get_model, get_optimizer
+from utils import GradualWarmupScheduler, get_model, get_optimizer, get_piecewise_constant_schedule, get_linear_schedule_with_warmup, get_polynomial_decay_schedule_with_warmup
 
 
 
@@ -81,13 +81,20 @@ def main(args):
         eta_min=0, 
         last_epoch=-1
     )
-    
-    warmUpScheduler = GradualWarmupScheduler(
+    if args.lr_schedule == "cosine":
+        warmUpScheduler = GradualWarmupScheduler(
         optimizer=optimizer, 
         multiplier=2.5,
         warm_epoch=args.epochs // 10, 
         after_scheduler=cosineScheduler
-    )
+        )
+    elif args.lr_schedule == "piecewise":
+        warmUpScheduler = get_piecewise_constant_schedule(optimizer, "1:30,0.1:60,0.05")
+    
+    elif args.lr_schedule == "linear":
+        warmUpScheduler = get_linear_schedule_with_warmup(optimizer, args.epochs // 10, args.epochs)
+    elif args.lr_schedule == "polynomial":
+        warmUpScheduler = get_polynomial_decay_schedule_with_warmup(optimizer, args.epochss // 10, args.epochs)
     
     
     dataloader, model, trainer, sampler, optimizer = accelerator.prepare(dataloader, model, trainer, sampler, optimizer)
@@ -117,6 +124,8 @@ def main(args):
             })
             optimizer.step()
             optimizer.zero_grad()
+        
+        wandb.log({'lr': optimizer.param_groups[0]["lr"]})
             
         warmUpScheduler.step()
             
@@ -179,6 +188,7 @@ if __name__ == '__main__':
     parser.add_argument('--eval_interval', type=int, default=10, help='Frequency of evaluation')
     parser.add_argument('--only_table', action='store_true', help="only use embedding table for class embedding")
     parser.add_argument('--fix_emb', action='store_true', help='Freeze embedding table wieght to create fixed label embedding')
+    parser.add_argument('--lr_schedule', type=str, default="cosine", choices=["cosine", "piecewise", "linear", "polynomial"])
     
     # Data hyperparameters
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
