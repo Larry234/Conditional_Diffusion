@@ -428,7 +428,7 @@ def get_model(args):
             num_atrs=args.num_condition[0],
             num_heads=args.num_heads,
             num_head_channels=args.num_head_channels,
-            use_spatial_transformer=True,
+            use_spatial_transformer=args.use_spatial_transformer,
             only_table=args.only_table,
             concat=args.concat
         )
@@ -447,7 +447,7 @@ def get_model(args):
         num_classes=args.num_condition,
         num_heads=args.num_heads,
         num_head_channels=args.num_head_channels,
-        use_spatial_transformer=True,
+        use_spatial_transformer=args.use_spatial_transformer,
         only_table=args.only_table
         )
     

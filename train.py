@@ -208,6 +208,7 @@ if __name__ == '__main__':
     parser.add_argument('--w', type=float, default=1.8, help='hyperparameters for classifier-free guidance strength')
     parser.add_argument('--num_condition', type=int, nargs='+', help='number of classes in each condition')
     parser.add_argument('--concat', action="store_true", help="concat label embedding before CA")
+    parser.add_argument('--use_spatial_transformer', action="store_true", help="use transfomer based model to do attention")
     
     # Transformer hyperparameters(Optional)
     parser.add_argument('--context_dim', type=int, default=512, help='q, k, v dimension in attention layer')
