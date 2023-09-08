@@ -5,7 +5,7 @@ from torch import nn
 from torch.nn import init
 from torch.nn import functional as F
 from .embedding import TimeEmbedding, ConditionalEmbedding, LabelEmbedding
-from .attention import SpatialTransformer
+from .attention import SpatialTransformer, AttentionBlock
 
 def drop_connect(x, drop_ratio):
     keep_ratio = 1.0 - drop_ratio
@@ -490,7 +490,13 @@ class UNetAttention(nn.Module):
                         #num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
                     layers.append(
-                        SpatialTransformer(
+                        AttentionBlock(
+                            ch,
+                            use_checkpoint=use_checkpoint,
+                            num_heads=num_heads,
+                            num_head_channels=dim_head,
+                            use_new_attention_order=use_new_attention_order,
+                        ) if not use_spatial_transformer else SpatialTransformer(
                             ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
                         )
                     )
@@ -531,7 +537,13 @@ class UNetAttention(nn.Module):
                 tdim=time_embed_dim,
                 dropout=dropout,
             ),
-            SpatialTransformer(
+            AttentionBlock(
+                ch,
+                use_checkpoint=use_checkpoint,
+                num_heads=num_heads,
+                num_head_channels=dim_head,
+                use_new_attention_order=use_new_attention_order,
+            ) if not use_spatial_transformer else SpatialTransformer(
                 ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
             ),
             ResBlock(
@@ -566,9 +578,15 @@ class UNetAttention(nn.Module):
                         #num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
                     layers.append(
-                        SpatialTransformer(
+                        AttentionBlock(
+                            ch,
+                            use_checkpoint=use_checkpoint,
+                            num_heads=num_heads,
+                            num_head_channels=dim_head,
+                            use_new_attention_order=use_new_attention_order,
+                        ) if not use_spatial_transformer else SpatialTransformer(
                             ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
-                        )
+                        ),
                     )
                 if level and i == num_res_blocks:
                     out_ch = ch
