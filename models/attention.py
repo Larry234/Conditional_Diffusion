@@ -379,12 +379,13 @@ class AttentionBlock(nn.Module):
         #return pt_checkpoint(self._forward, x)  # pytorch
 
     def _forward(self, x):
-        b, c, *spatial = x.shape
-        x = x.reshape(b, c, -1)
-        qkv = self.qkv(self.norm(x))
-        h = self.attention(qkv)
-        h = self.proj_out(h)
-        return (x + h).reshape(b, c, *spatial)
+        with torch.autocast("cuda"):
+            b, c, *spatial = x.shape
+            x = x.reshape(b, c, -1)
+            qkv = self.qkv(self.norm(x))
+            h = self.attention(qkv)
+            h = self.proj_out(h)
+            return (x + h).reshape(b, c, *spatial)
     
 class QKVAttentionLegacy(nn.Module):
     """
