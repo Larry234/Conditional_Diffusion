@@ -102,9 +102,11 @@ class TimestepEmbedSequential(nn.Sequential):
     support it as an extra input.
     """
 
-    def forward(self, x, emb, context=None):
+    def forward(self, x, emb, condition=None, context=None):
         for layer in self:
-            if isinstance(layer, ResBlock):
+            if isinstance(layer, ResBlockCond):
+                x = layer(x, emb, condition)
+            elif isinstance(layer, ResBlock):
                 x = layer(x, emb)
             elif isinstance(layer, SpatialTransformer):
                 x = layer(x, context)
@@ -140,7 +142,7 @@ class ResBlock(nn.Module):
         else:
             self.attn = nn.Identity()
         
-    def forward(self, x, temb):
+    def forward(self, x, temb, conditioned=None):
         h = self.block1(x)
         h += self.temb_proj(temb)[:, :, None, None]
         h = self.block2(h)
@@ -149,7 +151,25 @@ class ResBlock(nn.Module):
         h = self.attn(h)
         return h
         
-class ResBlockCondition(ResBlock):
+class ResBlockCond(ResBlock):
+    def __init__(self, in_ch, out_ch, tdim, dropout, attn=False):
+        super().__init__(in_ch, out_ch, tdim, dropout, attn)
+        self.cond_proj = nn.Sequential(
+            Swish(),
+            nn.Linear(tdim, out_ch),
+        )
+
+    def forward(self, x, temb, cond):
+        h = self.block1(x)
+        h += self.temb_proj(temb)[:, :, None, None]
+        h += self.cond_proj(cond)[:, :, None, None]
+        h = self.block2(h)
+
+        h = h + self.shortcut(x)
+        h = self.attn(h)
+        return h
+    
+class ResBlockDualCondition(ResBlock):
     def __init__(self, in_ch, out_ch, tdim, dropout, attn=False):
         super().__init__(in_ch, out_ch, tdim, dropout, attn)
         self.cond_proj = nn.Sequential(
@@ -652,7 +672,11 @@ class UNetAttention(nn.Module):
             return self.out(h)
 
         
-class UNetAttentionOneCond(nn.Module):
+
+        
+        
+        
+class UNetAttentionV2(nn.Module):
     """
     The full UNet model with attention and timestep embedding.
     :param in_channels: channels in the input Tensor.
@@ -695,6 +719,7 @@ class UNetAttentionOneCond(nn.Module):
         drop_prob=0.1,
         channel_mult=(1, 2, 4, 8),
         num_classes=None,
+        num_atrs=None,
         use_checkpoint=False,
         num_heads=-1,
         num_head_channels=-1,
@@ -706,7 +731,7 @@ class UNetAttentionOneCond(nn.Module):
         context_dim=None,                 # custom transformer support
         n_embed=None,                     # custom support for prediction of discrete ids into codebook of first stage vq model
         legacy=True,
-        only_table=False
+        only_table=False,
     ):
         super().__init__()
 #         if use_spatial_transformer:
@@ -732,6 +757,7 @@ class UNetAttentionOneCond(nn.Module):
         self.dropout = dropout
         self.channel_mult = channel_mult
         self.num_classes = num_classes
+        self.num_atrs = num_atrs
         self.use_checkpoint = use_checkpoint
         self.dtype = torch.float32
         self.num_heads = num_heads
@@ -739,7 +765,7 @@ class UNetAttentionOneCond(nn.Module):
         self.predict_codebook_ids = n_embed is not None
 
         time_embed_dim = model_channels * 4
-        context_dim = time_embed_dim
+        context_dim = model_channels * 4
         self.time_embed = TimeEmbedding(T, model_channels, time_embed_dim)
 
         if self.num_classes is not None:
@@ -747,6 +773,11 @@ class UNetAttentionOneCond(nn.Module):
                 self.label_emb = LabelEmbedding(num_classes, time_embed_dim, drop_prob)
             else:
                 self.label_emb = ConditionalEmbedding(num_classes, model_channels, time_embed_dim, drop_prob)
+        if self.num_atrs is not None:
+            if only_table:
+                self.atr_emb = LabelEmbedding(num_atrs, time_embed_dim, drop_prob)
+            else:
+                self.atr_emb = ConditionalEmbedding(num_atrs, model_channels, time_embed_dim, drop_prob)
 
         self.input_blocks = nn.ModuleList(
             [
@@ -762,7 +793,7 @@ class UNetAttentionOneCond(nn.Module):
         for level, mult in enumerate(channel_mult):
             for _ in range(num_res_blocks):
                 layers = [
-                    ResBlock(
+                    ResBlockCond(
                         in_ch=ch,
                         out_ch=mult * model_channels,
                         tdim=time_embed_dim,
@@ -780,7 +811,13 @@ class UNetAttentionOneCond(nn.Module):
                         #num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
                     layers.append(
-                        SpatialTransformer(
+                        AttentionBlock(
+                            ch,
+                            use_checkpoint=use_checkpoint,
+                            num_heads=num_heads,
+                            num_head_channels=dim_head,
+                            use_new_attention_order=use_new_attention_order,
+                        ) if not use_spatial_transformer else SpatialTransformer(
                             ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
                         )
                     )
@@ -815,16 +852,22 @@ class UNetAttentionOneCond(nn.Module):
             #num_heads = 1
             dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
         self.middle_block = TimestepEmbedSequential(
-            ResBlock(
+            ResBlockCond(
                 in_ch=ch,
                 out_ch=ch,
                 tdim=time_embed_dim,
                 dropout=dropout,
             ),
-            SpatialTransformer(
+            AttentionBlock(
+                ch,
+                use_checkpoint=use_checkpoint,
+                num_heads=num_heads,
+                num_head_channels=dim_head,
+                use_new_attention_order=use_new_attention_order,
+            ) if not use_spatial_transformer else SpatialTransformer(
                 ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
             ),
-            ResBlock(
+            ResBlockCond(
                 in_ch=ch,
                 out_ch=ch,
                 tdim=time_embed_dim,
@@ -838,7 +881,7 @@ class UNetAttentionOneCond(nn.Module):
             for i in range(num_res_blocks + 1):
                 ich = input_block_chans.pop()
                 layers = [
-                    ResBlock(
+                    ResBlockCond(
                         in_ch=ch + ich,
                         out_ch=model_channels * mult,
                         tdim=time_embed_dim,
@@ -856,9 +899,15 @@ class UNetAttentionOneCond(nn.Module):
                         #num_heads = 1
                         dim_head = ch // num_heads if use_spatial_transformer else num_head_channels
                     layers.append(
-                        SpatialTransformer(
+                        AttentionBlock(
+                            ch,
+                            use_checkpoint=use_checkpoint,
+                            num_heads=num_heads,
+                            num_head_channels=dim_head,
+                            use_new_attention_order=use_new_attention_order,
+                        ) if not use_spatial_transformer else SpatialTransformer(
                             ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim
-                        )
+                        ),
                     )
                 if level and i == num_res_blocks:
                     out_ch = ch
@@ -881,9 +930,15 @@ class UNetAttentionOneCond(nn.Module):
             nn.SiLU(),
             nn.Conv2d(ch, out_channels, 3, stride=1, padding=1),
         )
+#         if self.predict_codebook_ids:
+#             self.id_predictor = nn.Sequential(
+#             normalization(ch),
+#             conv_nd(dims, model_channels, n_embed, 1),
+#             #nn.LogSoftmax(dim=1)  # change to cross_entropy and produce non-normalized logits
+#         )
 
 
-    def forward(self, x, timesteps=None, c1=None, force_drop_ids=False, **kwargs):
+    def forward(self, x, timesteps=None, c1=None, c2=None, force_drop_ids=False, **kwargs):
         """
         Apply the model to an input batch.
         :param x: an [N x C x ...] Tensor of inputs.
@@ -895,18 +950,19 @@ class UNetAttentionOneCond(nn.Module):
         hs = []
         emb = self.time_embed(timesteps)
         context = None
-        if self.num_classes is not None:
-            assert c1.shape == (x.shape[0],)
-            c1 = self.label_emb(c1, force_drop_ids=force_drop_ids)[:, None, :]
-            context = c1
+        if self.num_classes is not None and self.num_atrs is not None:
+            assert c1.shape == (x.shape[0],) and c2.shape == (x.shape[0],)
+            cond = self.atr_emb(c1, force_drop_ids=force_drop_ids)
+            c2 = self.label_emb(c2, force_drop_ids=force_drop_ids)[:, None, :]
+            context = c2
         h = x.type(self.dtype)
         for module in self.input_blocks:
-            h = module(h, emb, context)
+            h = module(h, emb, cond, context)
             hs.append(h)
-        h = self.middle_block(h, emb, context)
+        h = self.middle_block(h, emb, cond, context)
         for module in self.output_blocks:
             h = torch.cat([h, hs.pop()], dim=1)
-            h = module(h, emb, context)
+            h = module(h, emb, cond, context)
         h = h.type(x.dtype)
         if self.predict_codebook_ids:
             return self.id_predictor(h)
