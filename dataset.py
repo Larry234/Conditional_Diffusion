@@ -3,7 +3,7 @@ import torch
 from PIL import Image
 from datasets import load_dataset
 
-from torch.utils.data import Dataset, TensorDataset, DataLoader
+from torch.utils.data import Dataset, TensorDataset, DataLoader, Sampler
 
 from glob import glob
 import os
@@ -54,16 +54,6 @@ class CustomImageDataset(Dataset):
     def __init__(self, root, transform=None, ignored=None):
         self.root = root
         self.transform = transform
-        images = glob(os.path.join(root, '**', '*.jpg'))
-        self.image_path = []
-        if ignored != None:
-            for image in images:
-                cat = image.split('/')[-2]
-                if cat not in ignored:
-                    self.image_path.append(image)
-        else:
-            self.image_path = images
-
         self.obj_dict = {}
         self.atr_dict = {}
         obj = []
@@ -71,8 +61,9 @@ class CustomImageDataset(Dataset):
         labels = [label.split(' ') for label in os.listdir(root)]
         
         for l in labels:
-            obj.append(l[0])
-            atr.append(l[1])
+            atr.append(l[0])
+            obj.append(l[1])
+            
         
         obj = list(set(obj))
         atr = list(set(atr))
@@ -82,13 +73,26 @@ class CustomImageDataset(Dataset):
         
         for i in range(len(atr)):
             self.atr_dict[atr[i]] = i
-            
+        
+        self.classes = [[self.atr_dict[l[0]], self.obj_dict[l[1]]] for l in labels]
+        
+        images = glob(os.path.join(root, '**', '*.jpg'))
+        self.image_path = []
+        self.labels = []
+        for image in images:
+            cat = image.split('/')[-2]
+            if ignored == None or cat not in ignored:
+                atr, obj = cat.split(" ")
+                self.image_path.append(image)
+                self.labels.append([self.atr_dict[atr], self.obj_dict[obj]])
+                
+                
     def __len__(self):
         return len(self.image_path)
 
     def __getitem__(self, index):
         if torch.is_tensor(index):
-            index = index.to_list()
+            index = index.tolist()
         image = Image.open(self.image_path[index]).convert('RGB')
         label = self.image_path[index].split('/')[-2]
         label = label.split(' ')
@@ -96,11 +100,34 @@ class CustomImageDataset(Dataset):
         if self.transform is not None:
             image = self.transform(image)
         
-        return image, torch.tensor(self.obj_dict[label[0]], dtype=torch.int64), torch.tensor(self.atr_dict[label[1]], dtype=torch.int64)
+        return image, torch.tensor(self.labels[index][0], dtype=torch.int64), torch.tensor(self.labels[index][1], dtype=torch.int64)
     
     def get_class(self):
         return self.obj_dict, self.atr_dict
+
+class CustomSampler(Sampler):
+    def __init__(self, data):
+        self.data = data
+        
+    def __iter__(self):
+        indices = []
+        index = []
+        rows = []
+        for label in self.data.classes:
+            for i in range(len(self.data.labels)):
+                if self.data.labels[i] == label:
+                    index.append(i)
+            indices.append(index)
+            index = []
+        
+        for i in zip(*indices):
+            rows.extend(i)
+        
+        return iter(rows)
     
+    def __len__(self):
+        return len(self.data)
+            
     
     
 class Phison:
