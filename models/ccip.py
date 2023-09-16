@@ -13,12 +13,13 @@ class CCIPModel(nn.Module):
         temperature=1,
         image_embedding=2048,
         class_embedding=512,
+        projection_dim=256,
     ):
         super().__init__()
         self.image_encoder = ImageEncoder()
-        self.class_encoder = ClassEncoder(num_atr, num_obj, emb_dim=class_embedding)
-        self.image_projection = ProjectionHead(embedding_dim=image_embedding)
-        self.class_projection = ProjectionHead(embedding_dim=class_embedding * 2)
+        self.class_encoder = ClassEncoder(num_atr + 1, num_obj + 1, emb_dim=class_embedding)
+        self.image_projection = ProjectionHead(embedding_dim=image_embedding, projection_dim=projection_dim)
+        self.class_projection = ProjectionHead(embedding_dim=class_embedding * 2, projection_dim=projection_dim)
         self.temperature = temperature
 
     def forward(self, image, atr, obj):
