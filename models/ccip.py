@@ -16,11 +16,21 @@ class CCIPModel(nn.Module):
         projection_dim=256,
     ):
         super().__init__()
+        self.num_atr = num_atr
+        self.num_obj = num_obj
         self.image_encoder = ImageEncoder()
         self.class_encoder = ClassEncoder(num_atr + 1, num_obj + 1, emb_dim=class_embedding)
         self.image_projection = ProjectionHead(embedding_dim=image_embedding, projection_dim=projection_dim)
         self.class_projection = ProjectionHead(embedding_dim=class_embedding * 2, projection_dim=projection_dim)
         self.temperature = temperature
+        
+    def token_drop(self, labels, force_drop_ids=None):
+        if force_drop_ids is None:
+            drop_ids = torch.rand(labels.shape[0], device=labels.device) < self.dropout_prob
+        else:
+            drop_ids = torch.tensor(force_drop_ids == 1, device=labels.device)
+        labels = torch.where(drop_ids, self.num_classes, labels)
+        return labels
 
     def forward(self, image, atr, obj):
         # Getting Image and Text Features
