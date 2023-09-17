@@ -749,8 +749,6 @@ class UNetEncoderAttention(nn.Module):
         self.attention_resolutions = attention_resolutions
         self.dropout = dropout
         self.channel_mult = channel_mult
-        self.num_classes = num_classes
-        self.num_atrs = num_atrs
         self.use_checkpoint = use_checkpoint
         self.dtype = torch.float32
         self.num_heads = num_heads
@@ -758,7 +756,6 @@ class UNetEncoderAttention(nn.Module):
         self.predict_codebook_ids = n_embed is not None
 
         time_embed_dim = model_channels * 4
-        context_dim = model_channels * 4
         self.time_embed = TimeEmbedding(T, model_channels, time_embed_dim)
 
         self.input_blocks = nn.ModuleList(
@@ -920,7 +917,7 @@ class UNetEncoderAttention(nn.Module):
 #         )
 
 
-    def forward(self, x, context=None, **kwargs):
+    def forward(self, x, timesteps=None, context=None, **kwargs):
         """
         Apply the model to an input batch.
         :param x: an [N x C x ...] Tensor of inputs.
@@ -931,6 +928,7 @@ class UNetEncoderAttention(nn.Module):
         """
         hs = []
         emb = self.time_embed(timesteps)
+        context = context[:, None, :]
         h = x.type(self.dtype)
         for module in self.input_blocks:
             h = module(h, emb, context=context)
