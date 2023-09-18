@@ -18,7 +18,8 @@ from accelerate import Accelerator
 from models.embedding import *
 from models.ccip import CCIPModel
 from dataset import CustomImageDataset, CustomSampler
-from utils import GradualWarmupScheduler, get_model    
+from utils import GradualWarmupScheduler, get_model
+from config import *
 
 
 def main(args):
@@ -51,7 +52,8 @@ def main(args):
     sampler = CustomSampler(train_ds)
     dataloader = DataLoader(train_ds, batch_size=args.batch_size, sampler=sampler, num_workers=args.num_workers)
 #     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
-    
+    args.num_condition[0] = len(ATR2IDX)
+    args.num_condition[1] = len(OBJ2IDX)
     
     # define models
     model = CCIPModel(
@@ -87,10 +89,12 @@ def main(args):
         progress_bar = tqdm(dataloader, desc=f'Epoch {epoch}')
         
         # train
-        for x, c1, c2 in progress_bar:
-            x = x.to(device)
-            c1 = c1.to(device)
-            c2 = c2.to(device)
+        for batch in progress_bar:
+            x = batch["image"].to(device)
+            c1 = [ATR2IDX[a] for a in batch["atr"]]
+            c2 = [OBJ2IDX[o] for o in batch["obj"]]
+            c1 = torch.tensor(c1, dtype=torch.long, device=device)
+            c2 = torch.tensor(c2, dtype=torch.long, device=device)
             B = x.size()[0]
             
             loss = model(x, c1, c2)

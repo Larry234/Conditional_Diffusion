@@ -8,6 +8,7 @@ from torch.utils.data import Dataset, TensorDataset, DataLoader, Sampler
 from glob import glob
 import os
 
+
 class PointDataset(Dataset):
     def __init__(self, root, transform=None, ignored=None, mean=2.5, std=2.5):
         
@@ -100,7 +101,7 @@ class CustomImageDataset(Dataset):
         if self.transform is not None:
             image = self.transform(image)
         
-        return image, torch.tensor(self.labels[index][0], dtype=torch.int64), torch.tensor(self.labels[index][1], dtype=torch.int64)
+        return {"image": image, "atr": label[0], "obj": label[1]}
     
     def get_class(self):
         return self.obj_dict, self.atr_dict
