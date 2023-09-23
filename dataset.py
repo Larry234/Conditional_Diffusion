@@ -60,7 +60,6 @@ class CustomImageDataset(Dataset):
         obj = []
         atr = []
         labels = [label.split(' ') for label in os.listdir(root)]
-        
         for l in labels:
             atr.append(l[0])
             obj.append(l[1])
@@ -75,8 +74,6 @@ class CustomImageDataset(Dataset):
         for i in range(len(atr)):
             self.atr_dict[atr[i]] = i
         
-        self.classes = [[self.atr_dict[l[0]], self.obj_dict[l[1]]] for l in labels]
-        
         images = glob(os.path.join(root, '**', '*.jpg'))
         self.image_path = []
         self.labels = []
@@ -85,8 +82,9 @@ class CustomImageDataset(Dataset):
             if ignored == None or cat not in ignored:
                 atr, obj = cat.split(" ")
                 self.image_path.append(image)
-                self.labels.append([self.atr_dict[atr], self.obj_dict[obj]])
+                self.labels.append((atr, obj))
                 
+        self.classes = set(self.labels)               
                 
     def __len__(self):
         return len(self.image_path)
@@ -101,7 +99,7 @@ class CustomImageDataset(Dataset):
         if self.transform is not None:
             image = self.transform(image)
         
-        return {"image": image, "atr": label[0], "obj": label[1]}
+        return {"image": image, "atr": self.labels[index][0], "obj": self.labels[index][1]}
     
     def get_class(self):
         return self.obj_dict, self.atr_dict
