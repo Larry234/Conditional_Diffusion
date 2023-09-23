@@ -928,7 +928,7 @@ class UNetEncoderAttention(nn.Module):
         """
         hs = []
         emb = self.time_embed(timesteps)
-        context = context[:, None, :]
+#         context = context[:, None, :]
         h = x.type(self.dtype)
         for module in self.input_blocks:
             h = module(h, emb, context=context)

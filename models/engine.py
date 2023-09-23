@@ -6,7 +6,6 @@ from tqdm import tqdm
 import numpy as np
 import math
 
-
 def extract(v, i, shape):
     """
     Get the i-th number in v, and the shape of v is mostly (T, ), the shape of i is mostly (batch_size, ).
@@ -137,12 +136,13 @@ class ConditionalGaussianDiffusionTrainer(nn.Module):
 
 class ConditionalDiffusionEncoderTrainer(nn.Module):
     
-    def __init__(self, encoder: nn.Module, model: nn.Module, beta: Tuple[int, int], T: int, drop_prob: float = 0.1):
+    def __init__(self, encoder: nn.Module, model: nn.Module, beta: Tuple[int, int], T: int, drop_prob: float = 0.1, only_encoder=False):
         super().__init__()
         self.encoder = encoder
         self.model = model
         self.T = T
         self.drop_prob = drop_prob
+        self.only_encoder = only_encoder
 
         # generate T steps of beta
         self.register_buffer("beta_t", torch.linspace(*beta, T, dtype=torch.float32))
@@ -164,7 +164,10 @@ class ConditionalDiffusionEncoderTrainer(nn.Module):
         
         # get embedding from conditional encoder
         context = self.encoder.class_encoder(c1, c2)
-        context = self.encoder.class_projection(context)
+        if self.only_encoder:
+            context = context.view(x_0.shape[0], -1, self.encoder.class_emb_dim) # [B, emb_dim * 2] -> [B, 2, emb_dim]
+        else:
+            context = self.encoder.class_projection(context)[:, None, :] # [B, context_dim] -> [B, 1, context_dim]
         
         # predict the noise added from $x_{t-1}$ to $x_t$
         x_t = (extract(self.signal_rate, t, x_0.shape) * x_0 +
@@ -388,12 +391,13 @@ class DDIMSampler(nn.Module):
 
 
 class DDIMSamplerEncoder(nn.Module):
-    def __init__(self, model, encoder, beta: Tuple[int, int], T: int, w: float, schedule="linear"):
+    def __init__(self, model, encoder, beta: Tuple[int, int], T: int, w: float, schedule="linear", only_encoder=False):
         super().__init__()
         self.model = model
         self.encoder = encoder
         self.T = T
         self.w = w
+        self.only_encoder = only_encoder
 
         # generate T steps of beta
         if schedule == "linear":
@@ -415,12 +419,18 @@ class DDIMSamplerEncoder(nn.Module):
 
         # predict conditional noise and unconditional noise using model
         context = self.encoder.class_encoder(atr, obj)
-        context = self.encoder.class_projection(context)
+        if self.only_encoder:
+            context = context.view(x_t.shape[0], -1, self.encoder.class_emb_dim) # [B, emb_dim * 2] -> [B, 2, emb_dim]
+        else:
+            context = self.encoder.class_projection(context)[:, None, :] # [B, context_dim] -> [B, 1, context_dim]
         
         unc_atr = torch.full((x_t.shape[0],), self.encoder.num_atr, device=x_t.device, dtype=torch.long)
         unc_obj = torch.full((x_t.shape[0],), self.encoder.num_obj, device=x_t.device, dtype=torch.long)
         unc_context = self.encoder.class_encoder(unc_atr, unc_obj)
-        unc_context = self.encoder.class_projection(unc_context)
+        if self.only_encoder:
+            unc_context = unc_context.view(x_t.shape[0], -1, self.encoder.class_emb_dim) # [B, emb_dim * 2] -> [B, 2, emb_dim]
+        else:
+            unc_context = self.encoder.class_projection(unc_context)[:, None, :] # [B, context_dim] -> [B, 1, context_dim]
         
         epsilon_theta_t = self.model(x_t, t, context)
         unc_epsilon_theta_t = self.model(x_t, t, unc_context)
