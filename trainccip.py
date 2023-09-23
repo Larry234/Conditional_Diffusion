@@ -48,7 +48,7 @@ def main(args):
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
     
-    train_ds = CustomImageDataset(root=args.data, transform=transform)
+    train_ds = CustomImageDataset(root=args.data, transform=transform, ignored=args.ignored)
     sampler = CustomSampler(train_ds)
     dataloader = DataLoader(train_ds, batch_size=args.batch_size, sampler=sampler, num_workers=args.num_workers)
 #     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
@@ -168,7 +168,8 @@ if __name__ == '__main__':
     parser.add_argument('--img_size', type=int, default=128, help='training image size')
     parser.add_argument('--exp', type=str, default='exp', help='experiment directory name')
     parser.add_argument('--num_condition', type=int, nargs="+", help='number of classes in each condition')
-
+    
+    parser.add_argument('--ignored', type=str, nargs='+', default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
     args = parser.parse_args()
     
     main(args)

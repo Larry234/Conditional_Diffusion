@@ -83,6 +83,7 @@ def main(args):
             model = model,
             beta = args.beta,
             T = args.num_timestep,
+            only_encoder = args.only_encoder
         )
         
         sampler = DDIMSamplerEncoder(
@@ -90,7 +91,8 @@ def main(args):
             encoder = encoder,
             beta = args.beta,
             T = args.num_timestep,
-            w = args.w
+            w = args.w,
+            only_encoder = args.only_encoder
         )
     
     cosineScheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
@@ -219,6 +221,7 @@ if __name__ == '__main__':
     
     # ccip parameters
     parser.add_argument('--encoder_path', type=str, default=None, help="pretrained weight path of class encoder")
+    parser.add_argument('--only_encoder', action="store_true", help="only use class encoder in ccip model(two tokens)")
     
     # Data hyperparameters
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
@@ -247,7 +250,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_head_channels', type=int, default=-1, help='attention head channels')
     parser.add_argument('--num_heads', type=int, default=-1, help='number of attention heads, either specify head_channels or num_heads')
     parser.add_argument('--channel_mult', type=list, default=[1, 2, 2, 2], help='width of unet model')
-    parser.add_argument('--ignored', type=str, default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
+    parser.add_argument('--ignored', type=str, nargs='+', default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
     
     
     args = parser.parse_args()
