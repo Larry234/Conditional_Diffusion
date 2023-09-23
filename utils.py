@@ -18,6 +18,7 @@ import math
 from enum import Enum
 from typing import Optional, Union, Tuple
 
+import torch
 from torch.optim import Optimizer
 from torch.optim import AdamW
 import torch.nn as nn
@@ -28,6 +29,7 @@ from models.engine import DDPMSampler, DDIMSampler
 
 from torch.optim.lr_scheduler import _LRScheduler
 
+from collections import OrderedDict
 
 # logger = logging.get_logger(__name__)
 
@@ -358,7 +360,6 @@ def get_scheduler(
     # All other schedulers require `num_warmup_steps`
     if num_warmup_steps is None:
         raise ValueError(f"{name} requires `num_warmup_steps`, please provide that argument.")
-
     if name == SchedulerType.CONSTANT_WITH_WARMUP:
         return schedule_func(optimizer, num_warmup_steps=num_warmup_steps, last_epoch=last_epoch)
 
@@ -432,23 +433,41 @@ def get_model(args):
             only_table=args.only_table,
             concat=args.concat
         )
-    elif args.arch == "unetattention1c": # unet one condition
-        from models.unet import UNetAttentionOneCond
-        model = UNetAttentionOneCond(
-        T=args.num_timestep,
-        image_size=args.img_size,
-        in_channels=3,
-        model_channels=args.emb_size,
-        out_channels=3,
-        num_res_blocks=args.num_res_blocks,
-        attention_resolutions=[8,4,2],
-        dropout=0.15,
-        channel_mult=args.channel_mult,
-        num_classes=args.num_condition,
-        num_heads=args.num_heads,
-        num_head_channels=args.num_head_channels,
-        use_spatial_transformer=args.use_spatial_transformer,
-        only_table=args.only_table
+    elif args.arch == "unetattentionv2":
+        from models.unet import UNetAttentionV2
+        model = UNetAttentionV2(
+            T=args.num_timestep,
+            image_size=args.img_size,
+            in_channels=3,
+            model_channels=args.emb_size,
+            out_channels=3,
+            num_res_blocks=args.num_res_blocks,
+            attention_resolutions=[8,4,2],
+            dropout=0.15,
+            channel_mult=args.channel_mult,
+            num_classes=args.num_condition[1],
+            num_atrs=args.num_condition[0],
+            num_heads=args.num_heads,
+            num_head_channels=args.num_head_channels,
+            use_spatial_transformer=args.use_spatial_transformer,
+            only_table=args.only_table,
+        )
+    elif args.arch == "unetencoderattention":
+        from models.unet import UNetEncoderAttention
+        model = UNetEncoderAttention(
+            T=args.num_timestep,
+            image_size=args.img_size,
+            in_channels=3,
+            model_channels=args.emb_size,
+            out_channels=3,
+            num_res_blocks=args.num_res_blocks,
+            attention_resolutions=[8,4,2],
+            dropout=0.15,
+            channel_mult=args.channel_mult,
+            num_heads=args.num_heads,
+            num_head_channels=args.num_head_channels,
+            use_spatial_transformer=args.use_spatial_transformer,
+            context_dim=args.context_dim,
         )
     
     return model
@@ -475,5 +494,33 @@ def get_optimizer(model, args):
     
     return AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
 
+
+def LoadEncoder(args):
+    from models.ccip import CCIPModel
+    ccip = CCIPModel(
+        num_atr = args.num_condition[0],
+        num_obj = args.num_condition[1],
+#         projection_dim = args.context_dim
+    )
+    
+    ckpt = torch.load(args.encoder_path)["model"]
+    
+    new_dict = OrderedDict()
+    
+    for k, v in ckpt.items():
+        if k.startswith("module"):
+            new_dict[k[7:]] = v
+        else:
+            new_dict[k] = v
+    try:
+        ccip.load_state_dict(new_dict)
+        print("All keys successfully match")
+    except:
+        print("some keys are missing!")
+        
+    for p in ccip.parameters():
+        p.requires_grad = False
+        
+    return ccip
     
     

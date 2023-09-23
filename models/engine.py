@@ -6,7 +6,6 @@ from tqdm import tqdm
 import numpy as np
 import math
 
-
 def extract(v, i, shape):
     """
     Get the i-th number in v, and the shape of v is mostly (T, ), the shape of i is mostly (batch_size, ).
@@ -134,6 +133,51 @@ class ConditionalGaussianDiffusionTrainer(nn.Module):
         loss = F.mse_loss(epsilon_theta, epsilon, reduction="none")
 #         loss = torch.sum(loss)
         return loss
+
+class ConditionalDiffusionEncoderTrainer(nn.Module):
+    
+    def __init__(self, encoder: nn.Module, model: nn.Module, beta: Tuple[int, int], T: int, drop_prob: float = 0.1, only_encoder=False):
+        super().__init__()
+        self.encoder = encoder
+        self.model = model
+        self.T = T
+        self.drop_prob = drop_prob
+        self.only_encoder = only_encoder
+
+        # generate T steps of beta
+        self.register_buffer("beta_t", torch.linspace(*beta, T, dtype=torch.float32))
+
+        # calculate the cumulative product of $\alpha$ , named $\bar{\alpha_t}$ in paper
+        alpha_t = 1.0 - self.beta_t
+        alpha_t_bar = torch.cumprod(alpha_t, dim=0)
+
+        # calculate and store two coefficient of $q(x_t | x_0)$
+        self.register_buffer("signal_rate", torch.sqrt(alpha_t_bar))
+        self.register_buffer("noise_rate", torch.sqrt(1.0 - alpha_t_bar))
+
+    def forward(self, x_0, c1, c2):
+        # get a random training step $t \sim Uniform({1, ..., T})$
+        t = torch.randint(self.T, size=(x_0.shape[0],), device=x_0.device)
+        
+        # generate $\epsilon \sim N(0, 1)$
+        epsilon = torch.randn_like(x_0)
+        
+        # get embedding from conditional encoder
+        context = self.encoder.class_encoder(c1, c2)
+        if self.only_encoder:
+            context = context.view(x_0.shape[0], -1, self.encoder.class_emb_dim) # [B, emb_dim * 2] -> [B, 2, emb_dim]
+        else:
+            context = self.encoder.class_projection(context)[:, None, :] # [B, context_dim] -> [B, 1, context_dim]
+        
+        # predict the noise added from $x_{t-1}$ to $x_t$
+        x_t = (extract(self.signal_rate, t, x_0.shape) * x_0 +
+               extract(self.noise_rate, t, x_0.shape) * epsilon)
+        epsilon_theta = self.model(x_t, t, context)
+
+        # get the gradient
+        loss = F.mse_loss(epsilon_theta, epsilon, reduction="none")
+#         loss = torch.sum(loss)
+        return loss
     
 class ConditionalGaussianDiffusionTrainerOneCond(nn.Module):
     
@@ -194,11 +238,11 @@ class DDPMSampler(nn.Module):
         self.register_buffer("posterior_variance", self.beta_t * (1.0 - alpha_t_bar_prev) / (1.0 - alpha_t_bar))
 
     @torch.no_grad()
-    def cal_mean_variance(self, x_t, t, label, atr):
+    def cal_mean_variance(self, x_t, t, obj, atr):
         """
         Calculate the mean and variance for $q(x_{t-1} | x_t, x_0)$
         """
-        epsilon_theta = self.model(x_t, t, label, atr)
+        epsilon_theta = self.model(x_t, t, obj, atr)
         mean = extract(self.coeff_1, t, x_t.shape) * x_t - extract(self.coeff_2, t, x_t.shape) * epsilon_theta
 
         # var is a constant
@@ -207,7 +251,7 @@ class DDPMSampler(nn.Module):
         return mean, var
 
     @torch.no_grad()
-    def sample_one_step(self, x_t, label, atr, time_step: int):
+    def sample_one_step(self, x_t, obj, atr, time_step: int):
         """
         Calculate $x_{t-1}$ according to $x_t$
         """
@@ -271,7 +315,7 @@ class DDIMSampler(nn.Module):
         self.register_buffer("alpha_t_bar", torch.cumprod(alpha_t, dim=0))
 
     @torch.no_grad()
-    def sample_one_step(self, x_t, time_step: int, label: torch.LongTensor, atr: torch.LongTensor, prev_time_step: int, eta: float):
+    def sample_one_step(self, x_t, time_step: int, atr: torch.LongTensor, obj: torch.LongTensor, prev_time_step: int, eta: float):
         t = torch.full((x_t.shape[0],), time_step, device=x_t.device, dtype=torch.long)
         prev_t = torch.full((x_t.shape[0],), prev_time_step, device=x_t.device, dtype=torch.long)
 
@@ -280,8 +324,8 @@ class DDIMSampler(nn.Module):
         alpha_t_prev = extract(self.alpha_t_bar, prev_t, x_t.shape)
 
         # predict conditional noise and unconditional noise using model
-        epsilon_theta_t = self.model(x_t, t, label, atr)
-        unc_epsilon_theta_t = self.model(x_t, t, label, atr, force_drop_ids=True)
+        epsilon_theta_t = self.model(x_t, t, atr, obj)
+        unc_epsilon_theta_t = self.model(x_t, t, obj, atr, force_drop_ids=True)
         
         # classifier-free guidance
         epsilon_theta_t = (1 + self.w) * epsilon_theta_t - self.w * unc_epsilon_theta_t
@@ -298,7 +342,7 @@ class DDIMSampler(nn.Module):
         return x_t_minus_one
 
     @torch.no_grad()
-    def forward(self, x_t, label: torch.LongTensor, atr: torch.LongTensor, steps: int = 1, method="linear", eta=0.0,
+    def forward(self, x_t, atr: torch.LongTensor, obj: torch.LongTensor, steps: int = 1, method="linear", eta=0.0,
                 only_return_x_0: bool = True, interval: int = 1):
         """
         Parameters:
@@ -333,7 +377,7 @@ class DDIMSampler(nn.Module):
         x = [x_t]
         with tqdm(reversed(range(0, steps)), colour="#6565b5", total=steps) as sampling_steps:
             for i in sampling_steps:
-                x_t = self.sample_one_step(x_t, time_steps[i], label, atr, time_steps_prev[i], eta)
+                x_t = self.sample_one_step(x_t, time_steps[i], atr, obj, time_steps_prev[i], eta)
 
                 if not only_return_x_0 and ((steps - i) % interval == 0 or i == 0):
                     x.append(torch.clip(x_t, -1.0, 1.0))
@@ -346,12 +390,14 @@ class DDIMSampler(nn.Module):
     
 
 
-class DDIMSamplerOneCond(nn.Module):
-    def __init__(self, model, beta: Tuple[int, int], T: int, w: float, schedule="linear"):
+class DDIMSamplerEncoder(nn.Module):
+    def __init__(self, model, encoder, beta: Tuple[int, int], T: int, w: float, schedule="linear", only_encoder=False):
         super().__init__()
         self.model = model
+        self.encoder = encoder
         self.T = T
         self.w = w
+        self.only_encoder = only_encoder
 
         # generate T steps of beta
         if schedule == "linear":
@@ -363,7 +409,7 @@ class DDIMSamplerOneCond(nn.Module):
         self.register_buffer("alpha_t_bar", torch.cumprod(alpha_t, dim=0))
 
     @torch.no_grad()
-    def sample_one_step(self, x_t, time_step: int, label: torch.LongTensor, prev_time_step: int, eta: float):
+    def sample_one_step(self, x_t, time_step: int, atr: torch.LongTensor, obj: torch.LongTensor, prev_time_step: int, eta: float):
         t = torch.full((x_t.shape[0],), time_step, device=x_t.device, dtype=torch.long)
         prev_t = torch.full((x_t.shape[0],), prev_time_step, device=x_t.device, dtype=torch.long)
 
@@ -372,8 +418,22 @@ class DDIMSamplerOneCond(nn.Module):
         alpha_t_prev = extract(self.alpha_t_bar, prev_t, x_t.shape)
 
         # predict conditional noise and unconditional noise using model
-        epsilon_theta_t = self.model(x_t, t, label)
-        unc_epsilon_theta_t = self.model(x_t, t, label, force_drop_ids=True)
+        context = self.encoder.class_encoder(atr, obj)
+        if self.only_encoder:
+            context = context.view(x_t.shape[0], -1, self.encoder.class_emb_dim) # [B, emb_dim * 2] -> [B, 2, emb_dim]
+        else:
+            context = self.encoder.class_projection(context)[:, None, :] # [B, context_dim] -> [B, 1, context_dim]
+        
+        unc_atr = torch.full((x_t.shape[0],), self.encoder.num_atr, device=x_t.device, dtype=torch.long)
+        unc_obj = torch.full((x_t.shape[0],), self.encoder.num_obj, device=x_t.device, dtype=torch.long)
+        unc_context = self.encoder.class_encoder(unc_atr, unc_obj)
+        if self.only_encoder:
+            unc_context = unc_context.view(x_t.shape[0], -1, self.encoder.class_emb_dim) # [B, emb_dim * 2] -> [B, 2, emb_dim]
+        else:
+            unc_context = self.encoder.class_projection(unc_context)[:, None, :] # [B, context_dim] -> [B, 1, context_dim]
+        
+        epsilon_theta_t = self.model(x_t, t, context)
+        unc_epsilon_theta_t = self.model(x_t, t, unc_context)
         
         # classifier-free guidance
         epsilon_theta_t = (1 + self.w) * epsilon_theta_t - self.w * unc_epsilon_theta_t
@@ -390,7 +450,7 @@ class DDIMSamplerOneCond(nn.Module):
         return x_t_minus_one
 
     @torch.no_grad()
-    def forward(self, x_t, label: torch.LongTensor, steps: int = 1, method="linear", eta=0.0,
+    def forward(self, x_t, atr: torch.LongTensor, obj: torch.LongTensor, steps: int = 1, method="linear", eta=0.0,
                 only_return_x_0: bool = True, interval: int = 1):
         """
         Parameters:
@@ -425,7 +485,7 @@ class DDIMSamplerOneCond(nn.Module):
         x = [x_t]
         with tqdm(reversed(range(0, steps)), colour="#6565b5", total=steps) as sampling_steps:
             for i in sampling_steps:
-                x_t = self.sample_one_step(x_t, time_steps[i], label, time_steps_prev[i], eta)
+                x_t = self.sample_one_step(x_t, time_steps[i], atr, obj, time_steps_prev[i], eta)
 
                 if not only_return_x_0 and ((steps - i) % interval == 0 or i == 0):
                     x.append(torch.clip(x_t, -1.0, 1.0))

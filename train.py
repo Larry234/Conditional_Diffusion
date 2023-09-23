@@ -15,9 +15,10 @@ import wandb
 from accelerate import Accelerator
 
 from models.embedding import *
-from models.engine import ConditionalGaussianDiffusionTrainer, DDIMSampler
+from models.engine import ConditionalGaussianDiffusionTrainer, ConditionalDiffusionEncoderTrainer, DDIMSampler, DDIMSamplerEncoder 
 from dataset import CustomImageDataset
-from utils import GradualWarmupScheduler, get_model, get_optimizer, get_piecewise_constant_schedule, get_linear_schedule_with_warmup, get_polynomial_decay_schedule_with_warmup
+from utils import GradualWarmupScheduler, get_model, get_optimizer, get_piecewise_constant_schedule, get_linear_schedule_with_warmup, get_polynomial_decay_schedule_with_warmup, LoadEncoder
+from config import *
 
 
 
@@ -51,14 +52,14 @@ def main(args):
     ])
     
     train_ds = CustomImageDataset(root=args.data, transform=transform, ignored=args.ignored)
-    objs, atrs = train_ds.get_class()
-    id2obj = {v: k for k, v in objs.items()}
-    id2atr = {v: k for k, v in atrs.items()}
     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     
     # generate samples for each class in evaluation
     n_samples = args.num_condition[0] * args.num_condition[1]
-    
+    num_atr = args.num_condition[0]
+    num_obj = args.num_condition[1]
+    args.num_condition[0] = len(ATR2IDX)
+    args.num_condition[1] = len(OBJ2IDX)
     # define models
     model = get_model(args)
     
@@ -74,12 +75,32 @@ def main(args):
         w=args.w
     )
     
+    if args.encoder_path != None:
+        encoder = LoadEncoder(args)
+        trainer = ConditionalDiffusionEncoderTrainer(
+            encoder = encoder,
+            model = model,
+            beta = args.beta,
+            T = args.num_timestep,
+            only_encoder = args.only_encoder
+        )
+        
+        sampler = DDIMSamplerEncoder(
+            model = model,
+            encoder = encoder,
+            beta = args.beta,
+            T = args.num_timestep,
+            w = args.w,
+            only_encoder = args.only_encoder
+        )
+    
     cosineScheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer=optimizer, 
         T_max=args.epochs, 
         eta_min=0, 
         last_epoch=-1
     )
+    
     if args.lr_schedule == "cosine":
         warmUpScheduler = GradualWarmupScheduler(
         optimizer=optimizer, 
@@ -104,11 +125,19 @@ def main(args):
         progress_bar = tqdm(dataloader, desc=f'Epoch {epoch}')
         
         # train
-        for x, c1, c2 in progress_bar:
-            x = x.to(device)
-            c1 = c1.to(device)
-            c2 = c2.to(device)
+        for batch in progress_bar:
+            x = batch["image"].to(device)
+            c1 = [ATR2IDX[a] for a in batch["atr"]]
+            c2 = [OBJ2IDX[o] for o in batch["obj"]]
+            c1 = torch.tensor(c1, dtype=torch.long, device=device)
+            c2 = torch.tensor(c2, dtype=torch.long, device=device)
             B = x.size()[0]
+            
+            if args.encoder_path != None:
+                drop_c1 = torch.rand(c1.shape[0], device=c1.device) < args.drop_prob
+                drop_c2 = torch.rand(c2.shape[0], device=c2.device) < args.drop_prob
+                c1 = torch.where(drop_c1, args.num_condition[0], c1)
+                c2 = torch.where(drop_c2, args.num_condition[1], c2)
             
             loss = trainer(x, c1, c2).sum() / B ** 2.
             accelerator.backward(loss)
@@ -137,10 +166,10 @@ def main(args):
 
             # create conditions of each class
             # create conditions like [0,0,0,1,1,1, ...] [0,1,2,3,0,1,2,3, ...]
-            c1 = torch.arange(0, args.num_condition[0])
-            c2 = torch.arange(0, args.num_condition[1])
-            c1 = c1.repeat(n_samples // args.num_condition[0], 1).permute(1, 0).reshape(-1)
-            c2 = c2.repeat(n_samples // args.num_condition[1])
+            c1 = torch.arange(0, num_atr)
+            c2 = torch.arange(0, num_obj)
+            c1 = c1.repeat(n_samples // num_atr, 1).permute(1, 0).reshape(-1)
+            c2 = c2.repeat(n_samples // num_obj)
 
             c1, c2 = c1.to(device), c2.to(device)
 
@@ -154,7 +183,7 @@ def main(args):
             x0 = x0.permute(0, 2, 3, 1)
             x0 = x0.cpu().detach().numpy()
             c1, c2 = c1.cpu().detach().numpy(), c2.cpu().detach().numpy()
-            images = [(f"{id2obj[c1[i]]} {id2atr[c2[i]]}", x0[i, :, :, :]) for i in range(n_samples)]
+            images = [(f"{IDX2ATR[c1[i]]} {IDX2OBJ[c2[i]]}", x0[i, :, :, :]) for i in range(n_samples)]
             wandb.log({f"evalution epoch {epoch}": [wandb.Image(image, caption=label) for label, image in images]})
             
             # save model
@@ -189,6 +218,10 @@ if __name__ == '__main__':
     parser.add_argument('--fix_emb', action='store_true', help='Freeze embedding table wieght to create fixed label embedding')
     parser.add_argument('--lr_schedule', type=str, default="cosine", choices=["cosine", "piecewise", "linear", "polynomial"])
     
+    # ccip parameters
+    parser.add_argument('--encoder_path', type=str, default=None, help="pretrained weight path of class encoder")
+    parser.add_argument('--only_encoder', action="store_true", help="only use class encoder in ccip model(two tokens)")
+    
     # Data hyperparameters
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
     parser.add_argument('--img_size', type=int, default=128, help='training image size')
@@ -201,6 +234,7 @@ if __name__ == '__main__':
     parser.add_argument('--exp', type=str, default='exp', help='experiment directory name')
     parser.add_argument('--sample_method', type=str, default='ddim', choices=['ddpm', 'ddim'], help='sampling method')
     parser.add_argument('--steps', type=int, default=100, help='decreased timesteps using ddim')
+    parser.add_argument('--drop_prob', type=float, default=0.1, help='probability of dropping label when training diffusion model')
     
     # UNet hyperparameters
     parser.add_argument('--num_res_blocks', type=int, default=2, help='number of residual blocks in unet')
@@ -215,7 +249,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_head_channels', type=int, default=-1, help='attention head channels')
     parser.add_argument('--num_heads', type=int, default=-1, help='number of attention heads, either specify head_channels or num_heads')
     parser.add_argument('--channel_mult', type=list, default=[1, 2, 2, 2], help='width of unet model')
-    parser.add_argument('--ignored', type=str, default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
+    parser.add_argument('--ignored', type=str, nargs='+', default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
     
     
     args = parser.parse_args()
