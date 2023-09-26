@@ -1,10 +1,13 @@
+import torch
+
+
 ATR2IDX = {
     'red': 0,
     'green': 1,
     'blue': 2,
-    'yellow': 3,
+    'yellow' : 3,
     'black': 4,
-    'purple': 5,
+    'purple' : 5,
 }
 
 OBJ2IDX = {
@@ -24,3 +27,5 @@ classes = []
 for va in IDX2ATR.values():
     for vo in IDX2OBJ.values():
         classes.append(f"{va} {vo}")
+        
+CLS2IDX = {classes[i] : i for i in range(len(classes))}
