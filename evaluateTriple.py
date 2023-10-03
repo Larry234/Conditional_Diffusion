@@ -38,6 +38,7 @@ if __name__ == "__main__":
     parser.add_argument('--num_condition', type=int, nargs='+', help="number of classes in each condition")
     parser.add_argument('--projection_dim', type=int, default=256, help="dimension of class and image projection")
     parser.add_argument('--out_dir', type=str, default="result", help="output location of csv file")
+    parser.add_argument('--name', type=str, help="output csv file name, file will be stored in {out_dir}/{name}.csv")
     
     args = parser.parse_args()
     
@@ -95,8 +96,7 @@ if __name__ == "__main__":
         
     
     # output record as csv file
-    name = args.encoder_path.split("/")[-1]
-    out_path = os.path.join(args.out_dir, name.split(".")[0] + ".csv")
+    out_path = os.path.join(args.out_dir, args.name + ".csv")
     df = pd.DataFrame(record, columns=["Label", "Top1", "Top5"])
     df.to_csv(out_path, index=False)
     print("Evaluation finished")

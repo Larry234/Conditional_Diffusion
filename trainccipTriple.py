@@ -150,7 +150,7 @@ def main(args):
         val_loss = 0
                           
         # save model
-        save_root = os.path.join('checkpoints', args.exp)
+        save_root = os.path.join('checkpoints', args.exp, args.dir)
         os.makedirs(save_root, exist_ok=True)
 
         torch.save({
@@ -183,6 +183,7 @@ if __name__ == '__main__':
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
     parser.add_argument('--img_size', type=int, default=128, help='training image size')
     parser.add_argument('--exp', type=str, default='exp', help='experiment directory name')
+    parser.add_argument('--dir', type=str, default="NoMiss", help="directory name")
     parser.add_argument('--num_condition', type=int, nargs="+", help='number of classes in each condition')
     
     parser.add_argument('--ignored', type=str, nargs='+', default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
