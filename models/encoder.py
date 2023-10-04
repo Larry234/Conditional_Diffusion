@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
-from .resnet import ResNet50
+# from .resnet import ResNet50
+from torchvision.models import resnet50, ResNet50_Weights
 
 
 class ClassEncoder(nn.Module):
@@ -60,8 +61,8 @@ class TripleClassEncoder(nn.Module):
         return torch.cat([size_embedding, atr_embedding, obj_embedding], dim=-1)
     
 
-def ImageEncoder():
-    encoder = ResNet50(10)
+def ImageEncoder(pretrained=False):
+    encoder = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
     encoder.fc = nn.Identity()
     return encoder
     
