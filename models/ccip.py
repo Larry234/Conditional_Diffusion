@@ -59,6 +59,7 @@ class CMLIPModel(nn.Module):
         image_embedding=2048,
         class_embedding=512,
         projection_dim=256,
+        mix=False,
     ):
         super().__init__()
         self.num_size = num_size
@@ -67,9 +68,13 @@ class CMLIPModel(nn.Module):
         self.class_emb_dim = class_embedding
         self.temperature = temperature
         self.image_encoder = ImageEncoder()
-        self.class_encoder = TripleClassEncoderV2(num_size + 1, num_atr + 1, num_obj + 1, emb_dim=class_embedding)
+        self.class_encoder = TripleClassEncoder(num_size + 1, num_atr + 1, num_obj + 1, emb_dim=class_embedding)
         self.image_projection = ProjectionHead(embedding_dim=image_embedding, projection_dim=projection_dim)
-        self.class_projection = ProjectionHead(embedding_dim=class_embedding, projection_dim=projection_dim)
+        self.class_projection = ProjectionHead(embedding_dim=class_embedding * 3, projection_dim=projection_dim)
+        
+        if mix:
+            self.class_encoder = TripleClassEncoderV2(num_size + 1, num_atr + 1, num_obj + 1, emb_dim=class_embedding)
+            self.class_projection = ProjectionHead(embedding_dim=class_embedding, projection_dim=projection_dim)
         
     def encode_class(self, size, atr, obj):
         emb = self.class_encoder(size=size, atr=atr, obj=obj)
