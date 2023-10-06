@@ -469,7 +469,26 @@ def get_model(args):
             use_spatial_transformer=args.use_spatial_transformer,
             context_dim=args.projection_dim,
         )
-    
+    elif args.arch == "unetattentiontriple":
+        from models.unet import UNetAttentionTripleCond
+        model = UNetAttentionTripleCond(
+            T=args.num_timestep,
+            image_size=args.img_size,
+            in_channels=3,
+            model_channels=args.emb_size,
+            out_channels=3,
+            num_res_blocks=args.num_res_blocks,
+            attention_resolutions=[8,4,2],
+            dropout=0.15,
+            channel_mult=args.channel_mult,
+            num_size=args.num_condition[0],
+            num_atr=args.num_condition[1],
+            num_obj=args.num_condition[2],
+            num_heads=args.num_heads,
+            num_head_channels=args.num_head_channels,
+            use_spatial_transformer=args.use_spatial_transformer,
+            concat=args.concat
+        )
     return model
     
 

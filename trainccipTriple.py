@@ -70,6 +70,7 @@ def main(args):
         num_size = args.num_condition[0],
         num_atr = args.num_condition[1],
         num_obj = args.num_condition[2],
+        temperature=args.temperature,
         class_embedding = args.emb_dim,
         projection_dim=args.projection_dim
     ).to(device)
@@ -176,8 +177,11 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=100, help='total training epochs')
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='weight decay coefficient')
+    
+    # model hyperparameters
     parser.add_argument('--emb_dim', type=int, default=512, help='Dimension of class embedding')
     parser.add_argument('--projection_dim', type=int, default=256, help='Dimension of class and image projection')
+    parser.add_argument('--temperature', type=float, default=1.)
     
     # Data hyperparameters
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')

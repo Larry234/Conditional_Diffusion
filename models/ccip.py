@@ -95,6 +95,7 @@ class CMLIPModel(nn.Module):
         
         # Calculating the Loss
         logits = (class_embeddings @ image_embeddings.T) / self.temperature
+        
         images_similarity = image_embeddings @ image_embeddings.T
         texts_similarity = class_embeddings @ class_embeddings.T
         targets = F.softmax(
