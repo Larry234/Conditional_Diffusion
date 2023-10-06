@@ -37,7 +37,7 @@ def main(args):
         job_type="training"
     )
     
-#     accelerator = Accelerator()
+    accelerator = Accelerator()
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -49,8 +49,17 @@ def main(args):
     ])
     
     train_ds = CustomImageDataset(root=args.data, transform=transform, ignored=args.ignored)
-    sampler = CustomSampler(train_ds)
-    dataloader = DataLoader(train_ds, batch_size=args.batch_size, sampler=sampler, num_workers=args.num_workers)
+    dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    
+    val_ds = CustomImageDataset(
+        root="/root/notebooks/nfs/work/dataset/toy_dataset_66_500",
+        transform=transform,
+        ignored=args.ignored
+    )
+    
+    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+#     sampler = CustomSampler(train_ds)
+#     dataloader = DataLoader(train_ds, batch_size=args.batch_size, sampler=sampler, num_workers=args.num_workers)
 #     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     args.num_condition[0] = len(ATR2IDX)
     args.num_condition[1] = len(OBJ2IDX)
@@ -66,28 +75,32 @@ def main(args):
     # optimizer and learning rate scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     
-    cosineScheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-        optimizer=optimizer, 
-        T_max=args.epochs, 
-        eta_min=0, 
-        last_epoch=-1
+#     cosineScheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+#         optimizer=optimizer, 
+#         T_max=args.epochs, 
+#         eta_min=0, 
+#         last_epoch=-1
+#     )
+    
+#     warmUpScheduler = GradualWarmupScheduler(
+#         optimizer=optimizer, 
+#         multiplier=2.5,
+#         warm_epoch=args.epochs // 10, 
+#         after_scheduler=cosineScheduler
+#     )
+    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode="min", patience=2, factor=0.5
     )
     
-    warmUpScheduler = GradualWarmupScheduler(
-        optimizer=optimizer, 
-        multiplier=2.5,
-        warm_epoch=args.epochs // 10, 
-        after_scheduler=cosineScheduler
-    )
     
-    
-#     dataloader, model, optimizer = accelerator.prepare(dataloader, model, optimizer)
+    dataloader, model, optimizer = accelerator.prepare(dataloader, model, optimizer)
     
     for epoch in range(1, args.epochs + 1):
         
         model.train()
         progress_bar = tqdm(dataloader, desc=f'Epoch {epoch}')
-        
+        train_loss = 0
+        val_loss = 0
         # train
         for batch in progress_bar:
             x = batch["image"].to(device)
@@ -97,44 +110,53 @@ def main(args):
             c2 = torch.tensor(c2, dtype=torch.long, device=device)
             B = x.size()[0]
             
-            loss = model(x, c1, c2)
-            loss.backward()
-#             accelerator.backward(loss)
+            loss = model(x, atr=c1, obj=c2)
+            train_loss += loss.item()
+            optimizer.zero_grad()
+            accelerator.backward(loss)
+#             loss.backward()
+            optimizer.step()
+            
                         
             # log training process
-            wandb.log({"loss": loss.item()})
+            wandb.log({"Train loss": loss.item()})
             
             progress_bar.set_postfix({
                 "loss": f"{loss.item(): .4f}",
                 "lr": optimizer.state_dict()['param_groups'][0]["lr"]
             })
-            optimizer.step()
-            optimizer.zero_grad()
             
-        warmUpScheduler.step()
-            
+        print(f"Epoch {epoch} Train avg loss: {train_loss / len(dataloader): .4f}")
+        train_loss = 0
+        
         # validation, save an image of currently generated samples
-#         with torch.no_grad():
-#             model.eval()
-#             # sample random noise
-#             progress_bar = tqdm(val_loader, desc=f'Validation Epoch {epoch}')
-#             for x, c1, c2 in progress_bar:
-#             # create conditions of each class
-#             # create conditions like [0,0,0,1,1,1, ...] [0,1,2,3,0,1,2,3, ...]
-#             x = x.to(device)
-#             c1 = c1.to(device)
-#             c2 = c2.to(device)
+        model.eval()
+        progress_bar = tqdm(val_loader, desc=f'Validation Epoch {epoch}')
+        with torch.no_grad():
             
-#             loss = model(x, c1, c2)
-                        
-#             # log training process
-#             wandb.log({"loss": loss.item()})
+            # sample random noise
+            for batch in progress_bar:
+                x = batch["image"].to(device)
+                c1 = [ATR2IDX[a] for a in batch["atr"]]
+                c2 = [OBJ2IDX[o] for o in batch["obj"]]
+                c1 = torch.tensor(c1, dtype=torch.long, device=device)
+                c2 = torch.tensor(c2, dtype=torch.long, device=device)
+                B = x.size()[0]
             
-#             progress_bar.set_postfix({
-#                 "loss": f"{loss.item(): .4f}",
-#                 "lr": optimizer.state_dict()['param_groups'][0]["lr"]
-#             })
-            
+                loss = model(x, atr=c1, obj=c2)
+                val_loss += loss.item()
+                # log training process
+                wandb.log({"Val loss": loss.item()})
+
+                progress_bar.set_postfix({
+                    "loss": f"{loss.item(): .4f}",
+                    "lr": optimizer.state_dict()['param_groups'][0]["lr"]
+                })
+        
+        print(f"Validation Epoch {epoch} Val avg loss: {val_loss / len(val_loader): .4f}")
+        lr_scheduler.step(val_loss / len(val_loader))
+        val_loss = 0
+                          
         # save model
         save_root = os.path.join('checkpoints', args.exp)
         os.makedirs(save_root, exist_ok=True)
@@ -144,7 +166,8 @@ def main(args):
             'model': model.state_dict(),
             'optimizer': optimizer.state_dict(),
         }, os.path.join(save_root, f"model_{epoch}.pth"))
-                
+        
+        
                 
 
 
