@@ -108,6 +108,7 @@ class CustomImageDatasetTripleCond(Dataset):
     def __init__(self, root, transform=None, ignored=None):
         self.root = root
         self.transform = transform
+        
         images = glob(os.path.join(root, '**', '*.jpg'))
         self.image_path = []
         self.labels = []
@@ -118,7 +119,7 @@ class CustomImageDatasetTripleCond(Dataset):
                 self.image_path.append(image)
                 self.labels.append((size, atr, obj))
                 
-        self.classes = set(self.labels)               
+        self.classes = set(self.labels)             
                 
     def __len__(self):
         return len(self.image_path)
@@ -132,6 +133,7 @@ class CustomImageDatasetTripleCond(Dataset):
             image = self.transform(image)
         
         return {"image": image, "size": self.labels[index][0], "atr": self.labels[index][1], "obj": self.labels[index][2]}
+    
 
 class CustomSampler(Sampler):
     def __init__(self, data):

@@ -1240,6 +1240,10 @@ class UNetAttentionV2(nn.Module):
             return self.id_predictor(h)
         else:
             return self.out(h)
+        
+        
+        
+
 
 
 

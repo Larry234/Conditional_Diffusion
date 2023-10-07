@@ -467,7 +467,7 @@ def get_model(args):
             num_heads=args.num_heads,
             num_head_channels=args.num_head_channels,
             use_spatial_transformer=args.use_spatial_transformer,
-            context_dim=args.context_dim,
+            context_dim=args.projection_dim,
         )
     
     return model
@@ -496,12 +496,21 @@ def get_optimizer(model, args):
 
 
 def LoadEncoder(args):
-    from models.ccip import CCIPModel
-    ccip = CCIPModel(
-        num_atr = args.num_condition[0],
-        num_obj = args.num_condition[1],
-#         projection_dim = args.context_dim
-    )
+    from models.ccip import CCIPModel, CMLIPModel
+    
+    if len(args.num_condition) == 2:
+        model = CCIPModel(
+            num_atr = args.num_condition[0],
+            num_obj = args.num_condition[1],
+    #         projection_dim = args.context_dim
+        )
+    elif len(args.num_condition) == 3:
+        model = CMLIPModel(
+            num_size = args.num_condition[0],
+            num_atr = args.num_condition[1],
+            num_obj = args.num_condition[2],
+            projection_dim = args.projection_dim
+        ) 
     
     ckpt = torch.load(args.encoder_path)["model"]
     
@@ -513,14 +522,14 @@ def LoadEncoder(args):
         else:
             new_dict[k] = v
     try:
-        ccip.load_state_dict(new_dict)
+        model.load_state_dict(new_dict)
         print("All keys successfully match")
     except:
         print("some keys are missing!")
         
-    for p in ccip.parameters():
+    for p in model.parameters():
         p.requires_grad = False
         
-    return ccip
+    return model
     
     

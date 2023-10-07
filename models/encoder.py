@@ -15,7 +15,7 @@ class ClassEncoder(nn.Module):
         )
         
         self.obj_emb = nn.Sequential(
-            nn.Embedding(num_embeddings=num_atr, embedding_dim=d_model),
+            nn.Embedding(num_embeddings=num_obj, embedding_dim=d_model),
             nn.Linear(d_model, emb_dim),
             nn.SiLU(),
             nn.Linear(emb_dim, emb_dim)
@@ -26,6 +26,38 @@ class ClassEncoder(nn.Module):
         obj_embedding = self.obj_emb(obj)
         
         return torch.cat([atr_embedding, obj_embedding], dim=-1)
+    
+class TripleClassEncoder(nn.Module):
+    def __init__(self, num_size, num_atr, num_obj, d_model=128, emb_dim=512):
+        super().__init__()
+        
+        self.size_emb = nn.Sequential(
+            nn.Embedding(num_embeddings=num_size, embedding_dim=d_model),
+            nn.Linear(d_model, emb_dim),
+            nn.SiLU(),
+            nn.Linear(emb_dim, emb_dim)
+        )
+        
+        self.atr_emb = nn.Sequential(
+            nn.Embedding(num_embeddings=num_atr, embedding_dim=d_model),
+            nn.Linear(d_model, emb_dim),
+            nn.SiLU(),
+            nn.Linear(emb_dim, emb_dim)
+        )
+        
+        self.obj_emb = nn.Sequential(
+            nn.Embedding(num_embeddings=num_atr, embedding_dim=d_model),
+            nn.Linear(d_model, emb_dim),
+            nn.SiLU(),
+            nn.Linear(emb_dim, emb_dim)
+        )
+        
+    def forward(self, size, atr, obj):
+        size_embedding = self.size_emb(size)
+        atr_embedding = self.atr_emb(atr)
+        obj_embedding = self.obj_emb(obj)
+        
+        return torch.cat([size_embedding, atr_embedding, obj_embedding], dim=-1)
     
 
 def ImageEncoder():
