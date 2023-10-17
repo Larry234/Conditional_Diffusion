@@ -98,6 +98,7 @@ if __name__ == "__main__":
     # output record as csv file
     out_path = os.path.join(args.out_dir, args.name + ".csv")
     df = pd.DataFrame(record, columns=["Label", "Top1", "Top5"])
+    df = df.sort_values("Label")
     df.to_csv(out_path, index=False)
     print("Evaluation finished")
     

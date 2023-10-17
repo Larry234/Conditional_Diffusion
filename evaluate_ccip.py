@@ -36,6 +36,7 @@ if __name__ == "__main__":
     parser.add_argument('--data', type=str, default="/root/notebooks/nfs/work/dataset/toy_dataset_66_500", help="path of test dataset")
     parser.add_argument('--encoder_path', type=str, default="checkpoints/CCIP/model_10.pth")
     parser.add_argument('--num_condition', type=int, nargs='+', help="number of classes in each condition")
+    parser.add_argument('--projection_dim', type=int, default=256, help="dimension of class and image projection")
     parser.add_argument('--target', type=str, nargs='+', help="evaluation target class in dataset")
     parser.add_argument('--out_dir', type=str, default="result", help="output location of csv file")
     parser.add_argument('--name', type=str, help="output csv file name, file will be stored in {out_dir}/{name}.csv")

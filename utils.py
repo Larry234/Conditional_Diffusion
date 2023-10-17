@@ -502,7 +502,7 @@ def LoadEncoder(args):
         model = CCIPModel(
             num_atr = args.num_condition[0],
             num_obj = args.num_condition[1],
-    #         projection_dim = args.context_dim
+            projection_dim = args.projection_dim
         )
     elif len(args.num_condition) == 3:
         model = CMLIPModel(
