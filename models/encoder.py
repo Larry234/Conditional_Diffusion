@@ -46,7 +46,7 @@ class TripleClassEncoder(nn.Module):
         )
         
         self.obj_emb = nn.Sequential(
-            nn.Embedding(num_embeddings=num_atr, embedding_dim=d_model),
+            nn.Embedding(num_embeddings=num_obj, embedding_dim=d_model),
             nn.Linear(d_model, emb_dim),
             nn.SiLU(),
             nn.Linear(emb_dim, emb_dim)
@@ -59,6 +59,28 @@ class TripleClassEncoder(nn.Module):
         
         return torch.cat([size_embedding, atr_embedding, obj_embedding], dim=-1)
     
+class TripleClassEncoderV2(nn.Module):
+    def __init__(self, num_size, num_atr, num_obj, d_model=128, emb_dim=512):
+        super().__init__()
+        
+        self.size_emb = nn.Embedding(num_embeddings=num_size, embedding_dim=d_model)
+        
+        self.atr_emb = nn.Embedding(num_embeddings=num_atr, embedding_dim=d_model)
+        
+        self.obj_emb = nn.Embedding(num_embeddings=num_obj, embedding_dim=d_model)
+
+        self.mlp = nn.Sequential(
+            nn.Linear(d_model * 3, emb_dim),
+            nn.SiLU(),
+            nn.Linear(emb_dim, emb_dim),
+        )
+
+    def forward(self, size, atr, obj):
+        size_embedding = self.size_emb(size)
+        atr_embedding = self.atr_emb(atr)
+        obj_embedding = self.obj_emb(obj)
+        emb = torch.cat([size_embedding, atr_embedding, obj_embedding], dim=-1)
+        return self.mlp(emb)
 
 def ImageEncoder():
     encoder = ResNet50(10)
