@@ -62,17 +62,3 @@ def cross_entropy(preds, targets, reduction='none'):
         return loss
     elif reduction == "mean":
         return loss.mean()
-
-if __name__ == '__main__':
-    images = torch.randn(8, 3, 224, 224)
-    input_ids = torch.randint(5, 300, size=(8, 25))
-    attention_mask = torch.ones(8, 25)
-    batch = {
-        'image': images,
-        'input_ids': input_ids,
-        'attention_mask': attention_mask
-    }
-
-    CLIP = CLIPModel()
-    loss = CLIP(batch)
-    print("")

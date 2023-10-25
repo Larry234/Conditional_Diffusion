@@ -211,7 +211,7 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=str, default='/root/notebooks/nfs/work/dataset/conditional_ut', help='dataset location')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='weight decay coefficient')
-    parser.add_argument('--batch_size', type=int, default=16, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=100, help='total training epochs')
     parser.add_argument('--eval_interval', type=int, default=10, help='Frequency of evaluation')
     parser.add_argument('--only_table', action='store_true', help="only use embedding table for class embedding")
@@ -224,7 +224,7 @@ if __name__ == '__main__':
     
     # Data hyperparameters
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
-    parser.add_argument('--img_size', type=int, default=128, help='training image size')
+    parser.add_argument('--img_size', type=int, default=64, help='training image size')
     
     # Diffusion hyperparameters
     parser.add_argument('--num_timestep', type=int, default=1000, help='number of timesteps')

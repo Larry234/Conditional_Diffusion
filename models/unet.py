@@ -172,20 +172,20 @@ class ResBlockCond(ResBlock):
 class ResBlockDualCondition(ResBlock):
     def __init__(self, in_ch, out_ch, tdim, dropout, attn=False):
         super().__init__(in_ch, out_ch, tdim, dropout, attn)
-        self.cond_proj = nn.Sequential(
+        self.atr_proj = nn.Sequential(
             Swish(),
             nn.Linear(tdim, out_ch // 2),
         )
-        self.com_proj = nn.Sequential(
+        self.obj_proj = nn.Sequential(
             Swish(),
             nn.Linear(tdim, out_ch // 2),
         )
 
-    def forward(self, x, temb, labels, labels_1):
+    def forward(self, x, temb, atr, obj):
         h = self.block1(x)
         h += self.temb_proj(temb)[:, :, None, None]
-        a = self.cond_proj(labels)[:, :, None, None]
-        b = self.com_proj(labels_1)[:, :, None, None]
+        a = self.atr_proj(atr)[:, :, None, None]
+        b = self.obj_proj(obj)[:, :, None, None]
         h += torch.cat((a, b), dim = 1)
         h = self.block2(h)
 
@@ -198,23 +198,23 @@ class ResBlockImageClassConcat(ResBlock):
     def __init__(self, in_ch: int, out_ch: int, tdim: int, dropout: float, attn=False):
         
         super().__init__(in_ch, out_ch, tdim, dropout, attn)
-        self.cond_proj = nn.Sequential(
+        self.atr_proj = nn.Sequential(
             Swish(),
             nn.Linear(tdim, out_ch // 2),
         )
-        self.com_proj = nn.Sequential(
+        self.obj_proj = nn.Sequential(
             Swish(),
             nn.Linear(tdim, out_ch // 2),
         )
         self.bottleneck = nn.Conv2d(out_ch*2, out_ch, 1, stride=1, padding=0)
 
-    def forward(self, x, temb, c1, c2):
+    def forward(self, x, temb, atr, obj):
         
         h = self.block1(x)
         temb = self.temb_proj(temb)[:, :, None, None]
-        c1 = self.cond_proj(c1)[:, :, None, None]
-        c2 = self.com_proj(c2)[:, :, None, None]
-        c = torch.cat([c1, c2], dim=1).expand(-1, -1, h.shape[-2], h.shape[-1])
+        atr = self.atr_proj(atr)[:, :, None, None]
+        obj = self.obj_proj(obj)[:, :, None, None]
+        c = torch.cat([atr, obj], dim=1).expand(-1, -1, h.shape[-2], h.shape[-1])
         h = torch.cat([h, c], dim=1)
         h = self.bottleneck(h)
         h += temb
@@ -225,86 +225,131 @@ class ResBlockImageClassConcat(ResBlock):
 
     
 class UNet(nn.Module):
-    def __init__(self, T, num_labels, num_atr, ch, ch_mult, num_res_blocks, dropout, drop_prob=0.1, only_table=False):
+    def __init__(self, T, num_atr, num_obj, model_channels, ch_mult, num_res_blocks, dropout, drop_prob=0.1, only_table=False):
         super().__init__()
-        tdim = ch * 4
-        self.time_embedding = TimeEmbedding(T, ch, tdim)
+        tdim = model_channels * 4
+        self.time_embedding = TimeEmbedding(T, model_channels, tdim)
         if only_table:
-            self.cond_embedding = LabelEmbedding(num_labels, ch, drop_prob)
-            self.com_embedding = LabelEmbedding(num_atr, ch, drop_prob)
+            self.atr_embedding = LabelEmbedding(num_atr, model_channels, drop_prob)
+            self.obj_embedding = LabelEmbedding(num_obj, model_channels, drop_prob)
         else:
-            self.cond_embedding = ConditionalEmbedding(num_labels, ch, tdim, drop_prob)
-            self.com_embedding = ConditionalEmbedding(num_atr, ch, tdim, drop_prob)
-        self.head = nn.Conv2d(3, ch, kernel_size=3, stride=1, padding=1)
-        self.downblocks = nn.ModuleList()
-        chs = [ch]  # record output channel when dowmsample for upsample
-        now_ch = ch
-        for i, mult in enumerate(ch_mult):
-            out_ch = ch * mult
+            self.atr_embedding = ConditionalEmbedding(num_atr, model_channels, tdim, drop_prob)
+            self.obj_embedding = ConditionalEmbedding(num_obj, model_channels, tdim, drop_prob)
+
+        self.input_blocks = nn.ModuleList(
+            [
+                TimestepEmbedSequential(
+                    nn.Conv2d(3, model_channels, 3, stride=1, padding=1)
+                )
+            ]
+        )
+        self._feature_size = model_channels
+        input_block_chans = [model_channels]
+        ch = model_channels
+        ds = 1
+        for level, mult in enumerate(ch_mult):
             for _ in range(num_res_blocks):
-                self.downblocks.append(ResBlock(in_ch=now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout))
-                now_ch = out_ch
-                chs.append(now_ch)
-                
-            if i != len(ch_mult) - 1:
-                self.downblocks.append(DownSample(now_ch))
-                chs.append(now_ch)
-                
-        self.middleblocks = nn.ModuleList(TimestepEmbedSequential(
-            ResBlock(now_ch, now_ch, tdim, dropout, attn=False),
-            ResBlock(now_ch, now_ch, tdim, dropout, attn=False),
-        ))
+                layers = [
+                    ResBlock(
+                        in_ch=ch,
+                        out_ch=mult * model_channels,
+                        tdim=tdim,
+                        dropout=dropout,
+                    )
+                ]
+                ch = mult * model_channels
+                self.input_blocks.append(TimestepEmbedSequential(*layers))
+                self._feature_size += ch
+                input_block_chans.append(ch)
+            if level != len(ch_mult) - 1:
+                out_ch = ch
+                self.input_blocks.append(
+                    TimestepEmbedSequential(
+                        DownSample(ch)
+                    )
+                )
+                ch = out_ch
+                input_block_chans.append(ch)
+                ds *= 2
+                self._feature_size += ch
 
-        self.upblocks = nn.ModuleList()
-        for i, mult in reversed(list(enumerate(ch_mult))):
-            out_ch = ch * mult
-            for _ in range(num_res_blocks + 1):
-                self.upblocks.append(ResBlock(in_ch=chs.pop() + now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout, attn=False))
-                now_ch = out_ch
-            if i != 0:
-                self.upblocks.append(UpSample(now_ch))
-        assert len(chs) == 0
+        self.middle_block = TimestepEmbedSequential(
+            ResBlock(
+                in_ch=ch,
+                out_ch=ch,
+                tdim=tdim,
+                dropout=dropout,
+            ),
+            ResBlock(
+                in_ch=ch,
+                out_ch=ch,
+                tdim=tdim,
+                dropout=dropout,
+            ),
+        )
+        self._feature_size += ch
 
-        self.tail = nn.Sequential(
-            nn.GroupNorm(32, now_ch),
-            Swish(),
-            nn.Conv2d(now_ch, 3, 3, stride=1, padding=1)
+        self.output_blocks = nn.ModuleList([])
+        for level, mult in list(enumerate(ch_mult))[::-1]:
+            for i in range(num_res_blocks + 1):
+                ich = input_block_chans.pop()
+                layers = [
+                    ResBlock(
+                        in_ch=ch + ich,
+                        out_ch=model_channels * mult,
+                        tdim=tdim,
+                        dropout=dropout,
+                    )
+                ]
+                ch = model_channels * mult
+                
+                if level and i == num_res_blocks:
+                    out_ch = ch
+                    layers.append(
+                        UpSample(ch)
+                    )
+                    ds //= 2
+                self.output_blocks.append(TimestepEmbedSequential(*layers))
+                self._feature_size += ch
+
+        self.out = nn.Sequential(
+            nn.GroupNorm(32, ch),
+            nn.SiLU(),
+            nn.Conv2d(ch, 3, 3, stride=1, padding=1),
         )
  
 
-    def forward(self, x, t, labels, labels_1, force_drop_ids=None):
+    def forward(self, x, t, atr, obj, force_drop_ids=None):
         # Timestep embedding
         temb = self.time_embedding(t)
-        cemb = self.cond_embedding(labels, force_drop_ids=force_drop_ids)
-        cemb1 = self.com_embedding(labels_1, force_drop_ids=force_drop_ids)
+        cemb = self.atr_embedding(atr, force_drop_ids=force_drop_ids)
+        cemb1 = self.obj_embedding(obj, force_drop_ids=force_drop_ids)
         temb = temb + cemb + cemb1
         # Downsampling
-        h = self.head(x)
-        hs = [h]
-        for layer in self.downblocks:
+        hs = []
+        h = x
+        for layer in self.input_blocks:
             h = layer(h, temb)
             hs.append(h)
         # Middle
-        for layer in self.middleblocks:
-            h = layer(h, temb)
+        h = self.middle_block(h, temb)
         # Upsampling
-        for layer in self.upblocks:
-            if isinstance(layer, ResBlock):
-                h = torch.cat([h, hs.pop()], dim=1)
+        for layer in self.output_blocks:
+            h = torch.cat([h, hs.pop()], dim=1)
             h = layer(h, temb)
-        h = self.tail(h)
+        h = self.out(h)
 
         assert len(hs) == 0
         return h
     
     
 class UNetIC(nn.Module):
-    def __init__(self, T, num_labels, num_atr, ch, ch_mult, num_res_blocks, dropout, drop_prob=0.1):
+    def __init__(self, T, num_atr, num_obj, ch, ch_mult, num_res_blocks, dropout, drop_prob=0.1):
         super().__init__()
         tdim = ch * 4
         self.time_embedding = TimeEmbedding(T, ch, tdim)
-        self.cond_embedding = ConditionalEmbedding(num_labels, ch, tdim, drop_prob)
-        self.com_embedding = ConditionalEmbedding(num_atr, ch, tdim, drop_prob)
+        self.atr_embedding = ConditionalEmbedding(num_atr, ch, tdim, drop_prob)
+        self.obj_embedding = ConditionalEmbedding(num_obj, ch, tdim, drop_prob)
         self.head = nn.Conv2d(3, ch, kernel_size=3, stride=1, padding=1)
         self.downblocks = nn.ModuleList()
         chs = [ch]  # record output channel when dowmsample for upsample
@@ -341,11 +386,11 @@ class UNetIC(nn.Module):
         )
  
 
-    def forward(self, x, t, labels, labels_1, force_drop_ids=None):
+    def forward(self, x, t, atr, obj, force_drop_ids=None):
         # Timestep embedding
         temb = self.time_embedding(t)
-        cemb = self.cond_embedding(labels, force_drop_ids=force_drop_ids)
-        cemb1 = self.com_embedding(labels_1, force_drop_ids=force_drop_ids)
+        cemb = self.atr_embedding(atr, force_drop_ids=force_drop_ids)
+        cemb1 = self.obj_embedding(obj, force_drop_ids=force_drop_ids)
         
         # Downsampling
         h = self.head(x)
@@ -414,8 +459,8 @@ class UNetAttention(nn.Module):
         dropout=0,
         drop_prob=0.1,
         channel_mult=(1, 2, 4, 8),
-        num_classes=None,
-        num_atrs=None,
+        num_atr=None,
+        num_obj=None,
         use_checkpoint=False,
         num_heads=-1,
         num_head_channels=-1,
@@ -453,8 +498,8 @@ class UNetAttention(nn.Module):
         self.attention_resolutions = attention_resolutions
         self.dropout = dropout
         self.channel_mult = channel_mult
-        self.num_classes = num_classes
-        self.num_atrs = num_atrs
+        self.num_atr = num_atr
+        self.num_obj = num_obj
         self.use_checkpoint = use_checkpoint
         self.dtype = torch.float32
         self.num_heads = num_heads
@@ -467,16 +512,16 @@ class UNetAttention(nn.Module):
         context_dim = model_channels * 4
         self.time_embed = TimeEmbedding(T, model_channels, time_embed_dim)
 
-        if self.num_classes is not None:
+        if self.num_atr is not None:
             if only_table:
-                self.label_emb = LabelEmbedding(num_classes, label_embed_dim, drop_prob)
+                self.atr_emb = LabelEmbedding(num_atr, label_embed_dim, drop_prob)
             else:
-                self.label_emb = ConditionalEmbedding(num_classes, model_channels, label_embed_dim, drop_prob)
-        if self.num_atrs is not None:
+                self.atr_emb = ConditionalEmbedding(num_atr, model_channels, label_embed_dim, drop_prob)
+        if self.num_obj is not None:
             if only_table:
-                self.atr_emb = LabelEmbedding(num_atrs, label_embed_dim, drop_prob)
+                self.obj_emb = LabelEmbedding(num_obj, label_embed_dim, drop_prob)
             else:
-                self.atr_emb = ConditionalEmbedding(num_atrs, model_channels, label_embed_dim, drop_prob)
+                self.obj_emb = ConditionalEmbedding(num_obj, model_channels, label_embed_dim, drop_prob)
 
         self.input_blocks = nn.ModuleList(
             [
@@ -649,10 +694,10 @@ class UNetAttention(nn.Module):
         hs = []
         emb = self.time_embed(timesteps)
         context = None
-        if self.num_classes is not None and self.num_atrs is not None:
+        if self.num_atr is not None and self.num_obj is not None:
             assert c1.shape == (x.shape[0],) and c2.shape == (x.shape[0],)
             c1 = self.atr_emb(c1, force_drop_ids=force_drop_ids)[:, None, :]
-            c2 = self.label_emb(c2, force_drop_ids=force_drop_ids)[:, None, :]
+            c2 = self.obj_emb(c2, force_drop_ids=force_drop_ids)[:, None, :]
             if self.concat:
                 context = torch.cat([c1, c2], dim=2)
             else:
@@ -990,8 +1035,8 @@ class UNetAttentionV2(nn.Module):
         dropout=0,
         drop_prob=0.1,
         channel_mult=(1, 2, 4, 8),
-        num_classes=None,
-        num_atrs=None,
+        num_atr=None,
+        num_obj=None,
         use_checkpoint=False,
         num_heads=-1,
         num_head_channels=-1,
@@ -1028,8 +1073,8 @@ class UNetAttentionV2(nn.Module):
         self.attention_resolutions = attention_resolutions
         self.dropout = dropout
         self.channel_mult = channel_mult
-        self.num_classes = num_classes
-        self.num_atrs = num_atrs
+        self.num_atr = num_atr
+        self.num_obj = num_obj
         self.use_checkpoint = use_checkpoint
         self.dtype = torch.float32
         self.num_heads = num_heads
@@ -1040,16 +1085,16 @@ class UNetAttentionV2(nn.Module):
         context_dim = model_channels * 4
         self.time_embed = TimeEmbedding(T, model_channels, time_embed_dim)
 
-        if self.num_classes is not None:
+        if self.num_atr is not None:
             if only_table:
-                self.label_emb = LabelEmbedding(num_classes, time_embed_dim, drop_prob)
+                self.atr_emb = LabelEmbedding(num_atr, time_embed_dim, drop_prob)
             else:
-                self.label_emb = ConditionalEmbedding(num_classes, model_channels, time_embed_dim, drop_prob)
-        if self.num_atrs is not None:
+                self.atr_emb = ConditionalEmbedding(num_atr, model_channels, time_embed_dim, drop_prob)
+        if self.num_obj is not None:
             if only_table:
-                self.atr_emb = LabelEmbedding(num_atrs, time_embed_dim, drop_prob)
+                self.obj_emb = LabelEmbedding(num_obj, time_embed_dim, drop_prob)
             else:
-                self.atr_emb = ConditionalEmbedding(num_atrs, model_channels, time_embed_dim, drop_prob)
+                self.obj_emb = ConditionalEmbedding(num_obj, model_channels, time_embed_dim, drop_prob)
 
         self.input_blocks = nn.ModuleList(
             [
@@ -1222,10 +1267,10 @@ class UNetAttentionV2(nn.Module):
         hs = []
         emb = self.time_embed(timesteps)
         context = None
-        if self.num_classes is not None and self.num_atrs is not None:
+        if self.num_atr is not None and self.num_obj is not None:
             assert c1.shape == (x.shape[0],) and c2.shape == (x.shape[0],)
             cond = self.atr_emb(c1, force_drop_ids=force_drop_ids)
-            c2 = self.label_emb(c2, force_drop_ids=force_drop_ids)[:, None, :]
+            c2 = self.obj_emb(c2, force_drop_ids=force_drop_ids)[:, None, :]
             context = c2
         h = x.type(self.dtype)
         for module in self.input_blocks:
