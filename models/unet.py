@@ -509,19 +509,18 @@ class UNetAttention(nn.Module):
 
         time_embed_dim = model_channels * 4
         label_embed_dim = time_embed_dim // 2 if self.concat else time_embed_dim
-        context_dim = model_channels * 4
         self.time_embed = TimeEmbedding(T, model_channels, time_embed_dim)
 
         if self.num_atr is not None:
             if only_table:
-                self.atr_emb = LabelEmbedding(num_atr, label_embed_dim, drop_prob)
+                self.atr_emb = LabelEmbedding(num_atr, context_dim, drop_prob)
             else:
-                self.atr_emb = ConditionalEmbedding(num_atr, model_channels, label_embed_dim, drop_prob)
+                self.atr_emb = ConditionalEmbedding(num_atr, model_channels, context_dim, drop_prob)
         if self.num_obj is not None:
             if only_table:
-                self.obj_emb = LabelEmbedding(num_obj, label_embed_dim, drop_prob)
+                self.obj_emb = LabelEmbedding(num_obj, context_dim, drop_prob)
             else:
-                self.obj_emb = ConditionalEmbedding(num_obj, model_channels, label_embed_dim, drop_prob)
+                self.obj_emb = ConditionalEmbedding(num_obj, model_channels, context_dim, drop_prob)
 
         self.input_blocks = nn.ModuleList(
             [

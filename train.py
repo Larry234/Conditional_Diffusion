@@ -51,6 +51,16 @@ def main(args):
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
     ])
     
+    ds_type = args.data.split("/")[-1]
+    
+    if "ut" in ds_type:
+        CFG = Zappo50K()
+        ATR2IDX = CFG.ATR2IDX
+        OBJ2IDX = CFG.OBJ2IDX
+        IDX2ATR = CFG.IDX2ATR
+        IDX2OBJ = CFG.IDX2OBJ
+        classes = CFG.classes
+    
     train_ds = CustomImageDataset(root=args.data, transform=transform, ignored=args.ignored)
     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     

@@ -57,22 +57,6 @@ class CustomImageDataset(Dataset):
         self.transform = transform
         self.obj_dict = {}
         self.atr_dict = {}
-        obj = []
-        atr = []
-        labels = [label.split(' ') for label in os.listdir(root)]
-        for l in labels:
-            atr.append(l[0])
-            obj.append(l[1])
-            
-        
-        obj = list(set(obj))
-        atr = list(set(atr))
-         
-        for i in range(len(obj)):
-            self.obj_dict[obj[i]] = i
-        
-        for i in range(len(atr)):
-            self.atr_dict[atr[i]] = i
         
         images = glob(os.path.join(root, '**', '*.jpg'))
         self.image_path = []
@@ -84,7 +68,7 @@ class CustomImageDataset(Dataset):
                 self.image_path.append(image)
                 self.labels.append((atr, obj))
                 
-        self.classes = set(self.labels)               
+        self.classes = set(self.labels)
                 
     def __len__(self):
         return len(self.image_path)
