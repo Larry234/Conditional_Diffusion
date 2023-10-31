@@ -52,7 +52,7 @@ def main(args):
     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     
     val_ds = CustomImageDataset(
-        root="/root/notebooks/nfs/work/dataset/toy_dataset_66_500",
+        root=args.val,
         transform=transform,
         ignored=args.ignored
     )
@@ -68,7 +68,8 @@ def main(args):
     model = CCIPModel(
         num_atr = args.num_condition[0],
         num_obj = args.num_condition[1],
-        class_embedding = args.emb_dim
+        projection_dim = args.projection_dim,
+        origin=args.origin
     ).to(device)
     
     
@@ -158,7 +159,7 @@ def main(args):
         val_loss = 0
                           
         # save model
-        save_root = os.path.join('checkpoints', args.exp)
+        save_root = os.path.join('checkpoints', args.exp, args.dir)
         os.makedirs(save_root, exist_ok=True)
 
         torch.save({
@@ -180,19 +181,22 @@ if __name__ == '__main__':
     
     # General Hyperparameters 
     parser.add_argument('--data', type=str, default='/root/notebooks/nfs/work/dataset/conditional_ut', help='dataset location')
+    parser.add_argument('--val', type=str, default='data/ShapeColor_66_500', help="validation dataset location")
+    parser.add_argument('--dir', type=str, default="NoMiss")
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=100, help='total training epochs')
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='weight decay coefficient')
-    parser.add_argument('--emb_dim', type=int, default=512, help='Dimension of class embedding')
+    parser.add_argument('--projection_dim', type=int, default=256, help='Dimension of class embedding')
     
     # Data hyperparameters
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
-    parser.add_argument('--img_size', type=int, default=128, help='training image size')
+    parser.add_argument('--img_size', type=int, default=64, help='training image size')
     parser.add_argument('--exp', type=str, default='exp', help='experiment directory name')
     parser.add_argument('--num_condition', type=int, nargs="+", help='number of classes in each condition')
     
     parser.add_argument('--ignored', type=str, nargs='+', default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
+    parser.add_argument('--origin', action="store_true")
     args = parser.parse_args()
     
     main(args)
