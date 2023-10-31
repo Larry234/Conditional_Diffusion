@@ -180,11 +180,13 @@ if __name__ == '__main__':
     
     # General Hyperparameters 
     parser.add_argument('--data', type=str, default='/root/notebooks/nfs/work/dataset/conditional_ut', help='dataset location')
+    parser.add_argument('--val', type=str, default='data/ShapeColor_66_500', help="validation dataset location")
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=100, help='total training epochs')
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='weight decay coefficient')
     parser.add_argument('--emb_dim', type=int, default=512, help='Dimension of class embedding')
+    parser.add_argument('--projection_dim', type=int, default=256, help='Dimension of class embedding')
     
     # Data hyperparameters
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
