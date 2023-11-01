@@ -37,9 +37,10 @@ def main(args):
         job_type="training"
     )
     
-    accelerator = Accelerator()
+#     accelerator = Accelerator()
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+#     device = torch.device("cpu")
     
     # Load dataset
     transform = transforms.Compose([
@@ -52,12 +53,23 @@ def main(args):
     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     
     val_ds = CustomImageDataset(
-        root="/root/notebooks/nfs/work/dataset/toy_dataset_66_500",
+        root=args.val,
         transform=transform,
-        ignored=args.ignored
+#         ignored=args.ignored
     )
     
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    
+    ds_type = args.data.split("/")[-1]
+    
+    if "ut" in ds_type:
+        CFG = Zappo50K()
+        ATR2IDX = CFG.ATR2IDX
+        OBJ2IDX = CFG.OBJ2IDX
+        IDX2ATR = CFG.IDX2ATR
+        IDX2OBJ = CFG.IDX2OBJ
+        classes = CFG.classes
+        
 #     sampler = CustomSampler(train_ds)
 #     dataloader = DataLoader(train_ds, batch_size=args.batch_size, sampler=sampler, num_workers=args.num_workers)
 #     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
@@ -68,32 +80,32 @@ def main(args):
     model = CCIPModel(
         num_atr = args.num_condition[0],
         num_obj = args.num_condition[1],
-        class_embedding = args.emb_dim
+        projection_dim = args.projection_dim,
+        origin=args.origin
     ).to(device)
-    
     
     # optimizer and learning rate scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     
-#     cosineScheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
-#         optimizer=optimizer, 
-#         T_max=args.epochs, 
-#         eta_min=0, 
-#         last_epoch=-1
-#     )
-    
-#     warmUpScheduler = GradualWarmupScheduler(
-#         optimizer=optimizer, 
-#         multiplier=2.5,
-#         warm_epoch=args.epochs // 10, 
-#         after_scheduler=cosineScheduler
-#     )
-    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", patience=2, factor=0.5
+    cosineScheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer=optimizer, 
+        T_max=args.epochs, 
+        eta_min=0, 
+        last_epoch=-1
     )
+
+    warmUpScheduler = GradualWarmupScheduler(
+        optimizer=optimizer, 
+        multiplier=2.5,
+        warm_epoch=args.epochs // 10, 
+        after_scheduler=cosineScheduler
+    )
+#     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+#         optimizer, mode="min", patience=2, factor=0.5
+#     )
     
     
-    dataloader, model, optimizer = accelerator.prepare(dataloader, model, optimizer)
+#     dataloader, model, optimizer = accelerator.prepare(dataloader, model, optimizer)
     
     for epoch in range(1, args.epochs + 1):
         
@@ -113,8 +125,8 @@ def main(args):
             loss = model(x, atr=c1, obj=c2)
             train_loss += loss.item()
             optimizer.zero_grad()
-            accelerator.backward(loss)
-#             loss.backward()
+#             accelerator.backward(loss)
+            loss.backward()
             optimizer.step()
             
                         
@@ -154,11 +166,11 @@ def main(args):
                 })
         
         print(f"Validation Epoch {epoch} Val avg loss: {val_loss / len(val_loader): .4f}")
-        lr_scheduler.step(val_loss / len(val_loader))
+        warmUpScheduler.step(val_loss / len(val_loader))
         val_loss = 0
                           
         # save model
-        save_root = os.path.join('checkpoints', args.exp)
+        save_root = os.path.join('checkpoints', args.exp, args.dir)
         os.makedirs(save_root, exist_ok=True)
 
         torch.save({
@@ -181,6 +193,7 @@ if __name__ == '__main__':
     # General Hyperparameters 
     parser.add_argument('--data', type=str, default='/root/notebooks/nfs/work/dataset/conditional_ut', help='dataset location')
     parser.add_argument('--val', type=str, default='data/ShapeColor_66_500', help="validation dataset location")
+    parser.add_argument('--dir', type=str, default="NoMiss")
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=100, help='total training epochs')
@@ -190,11 +203,12 @@ if __name__ == '__main__':
     
     # Data hyperparameters
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
-    parser.add_argument('--img_size', type=int, default=128, help='training image size')
+    parser.add_argument('--img_size', type=int, default=64, help='training image size')
     parser.add_argument('--exp', type=str, default='exp', help='experiment directory name')
     parser.add_argument('--num_condition', type=int, nargs="+", help='number of classes in each condition')
     
     parser.add_argument('--ignored', type=str, nargs='+', default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
+    parser.add_argument('--origin', action="store_true")
     args = parser.parse_args()
     
     main(args)
