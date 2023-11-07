@@ -64,11 +64,14 @@ def main(args):
     
     if "ut" in ds_type:
         CFG = Zappo50K()
-        ATR2IDX = CFG.ATR2IDX
-        OBJ2IDX = CFG.OBJ2IDX
-        IDX2ATR = CFG.IDX2ATR
-        IDX2OBJ = CFG.IDX2OBJ
-        classes = CFG.classes
+    else:
+        CFG = toy_dataset()
+        
+    ATR2IDX = CFG.ATR2IDX
+    OBJ2IDX = CFG.OBJ2IDX
+    IDX2ATR = CFG.IDX2ATR
+    IDX2OBJ = CFG.IDX2OBJ
+    classes = CFG.classes
         
 #     sampler = CustomSampler(train_ds)
 #     dataloader = DataLoader(train_ds, batch_size=args.batch_size, sampler=sampler, num_workers=args.num_workers)

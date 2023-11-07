@@ -15,7 +15,7 @@ class ClassEncoder(nn.Module):
         )
         
         self.obj_emb = nn.Sequential(
-            nn.Embedding(num_embeddings=num_atr, embedding_dim=d_model),
+            nn.Embedding(num_embeddings=num_obj, embedding_dim=d_model),
             nn.Linear(d_model, emb_dim),
             nn.SiLU(),
             nn.Linear(emb_dim, emb_dim)

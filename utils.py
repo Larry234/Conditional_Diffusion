@@ -427,7 +427,7 @@ def get_model(args):
             channel_mult=args.channel_mult,
             num_atr=args.num_condition[0],
             num_obj=args.num_condition[1],
-            context_dim=args.context_dim,
+            context_dim=args.projection_dim,
             num_heads=args.num_heads,
             num_head_channels=args.num_head_channels,
             use_spatial_transformer=args.use_spatial_transformer,
@@ -468,7 +468,7 @@ def get_model(args):
             num_heads=args.num_heads,
             num_head_channels=args.num_head_channels,
             use_spatial_transformer=args.use_spatial_transformer,
-            context_dim=args.context_dim,
+            context_dim=args.projection_dim,
         )
     
     return model

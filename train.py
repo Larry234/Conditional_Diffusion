@@ -52,14 +52,16 @@ def main(args):
     ])
     
     ds_type = args.data.split("/")[-1]
-    
-    if "ut" in ds_type:
+    if "ut" in ds_type :
         CFG = Zappo50K()
-        ATR2IDX = CFG.ATR2IDX
-        OBJ2IDX = CFG.OBJ2IDX
-        IDX2ATR = CFG.IDX2ATR
-        IDX2OBJ = CFG.IDX2OBJ
-        classes = CFG.classes
+    else:
+        CFG = toy_dataset()
+        
+    ATR2IDX = CFG.ATR2IDX
+    OBJ2IDX = CFG.OBJ2IDX
+    IDX2ATR = CFG.IDX2ATR
+    IDX2OBJ = CFG.IDX2OBJ
+    classes = CFG.classes
     
     train_ds = CustomImageDataset(root=args.data, transform=transform, ignored=args.ignored)
     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
@@ -256,7 +258,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_spatial_transformer', action="store_true", help="use transfomer based model to do attention")
     
     # Transformer hyperparameters(Optional)
-    parser.add_argument('--context_dim', type=int, default=512, help='q, k, v dimension in attention layer')
+    parser.add_argument('--projection_dim', type=int, default=512, help='q, k, v dimension in attention layer')
     parser.add_argument('--num_head_channels', type=int, default=-1, help='attention head channels')
     parser.add_argument('--num_heads', type=int, default=-1, help='number of attention heads, either specify head_channels or num_heads')
     parser.add_argument('--channel_mult', type=list, default=[1, 2, 2, 2], help='width of unet model')

@@ -36,9 +36,11 @@ if __name__ == "__main__":
     parser.add_argument('--data', type=str, default="/root/notebooks/nfs/work/dataset/toy_dataset_66_500", help="path of test dataset")
     parser.add_argument('--encoder_path', type=str, default="checkpoints/CCIP/model_10.pth")
     parser.add_argument('--num_condition', type=int, nargs='+', help="number of classes in each condition")
+    parser.add_argument('--img_size', type=int, default=64, help="validation image size")
     parser.add_argument('--target', type=str, nargs='+', help="evaluation target class in dataset")
     parser.add_argument('--out_dir', type=str, default="result", help="output location of csv file")
     parser.add_argument('--name', type=str, help="output csv file name, file will be stored in {out_dir}/{name}.csv")
+    parser.add_argument('--projection_dim', type=int, default=256)
     
     args = parser.parse_args()
     
@@ -48,11 +50,26 @@ if __name__ == "__main__":
     model.eval()
     
     transform = transforms.Compose([
+        transforms.Resize((args.img_size, args.img_size)),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
     ])
     
     record = []
+    
+    ds_type = args.data.split("/")[-1]
+    
+    if "ut" in ds_type:
+        CFG = Zappo50K()
+    else:
+        CFG = toy_dataset()
+        
+    ATR2IDX = CFG.ATR2IDX
+    OBJ2IDX = CFG.OBJ2IDX
+    IDX2ATR = CFG.IDX2ATR
+    IDX2OBJ = CFG.IDX2OBJ
+    classes = CFG.classes
+    CLS2IDX = CFG.CLS2IDX
     
     num_atr = len(IDX2ATR)
     num_obj = len(IDX2OBJ)
