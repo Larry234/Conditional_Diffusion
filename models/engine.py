@@ -167,7 +167,7 @@ class ConditionalDiffusionEncoderTrainer(nn.Module):
         if self.only_encoder:
             context = context.view(x_0.shape[0], -1, self.encoder.class_emb_dim) # [B, emb_dim * 2] -> [B, 2, emb_dim]
         else:
-            context = self.encoder.class_projection(context)[:, None, :] # [B, context_dim] -> [B, 1, context_dim]
+            context = self.encoder.class_projection(context) # [B, context_dim] -> [B, 1, context_dim]
         
         # predict the noise added from $x_{t-1}$ to $x_t$
         x_t = (extract(self.signal_rate, t, x_0.shape) * x_0 +
@@ -422,7 +422,7 @@ class DDIMSamplerEncoder(nn.Module):
         if self.only_encoder:
             context = context.view(x_t.shape[0], -1, self.encoder.class_emb_dim) # [B, emb_dim * 2] -> [B, 2, emb_dim]
         else:
-            context = self.encoder.class_projection(context)[:, None, :] # [B, context_dim] -> [B, 1, context_dim]
+            context = self.encoder.class_projection(context) # [B, context_dim] -> [B, 1, context_dim]
         
         unc_atr = torch.full((x_t.shape[0],), self.encoder.num_atr, device=x_t.device, dtype=torch.long)
         unc_obj = torch.full((x_t.shape[0],), self.encoder.num_obj, device=x_t.device, dtype=torch.long)
@@ -430,7 +430,7 @@ class DDIMSamplerEncoder(nn.Module):
         if self.only_encoder:
             unc_context = unc_context.view(x_t.shape[0], -1, self.encoder.class_emb_dim) # [B, emb_dim * 2] -> [B, 2, emb_dim]
         else:
-            unc_context = self.encoder.class_projection(unc_context)[:, None, :] # [B, context_dim] -> [B, 1, context_dim]
+            unc_context = self.encoder.class_projection(unc_context) # [B, context_dim] -> [B, 1, context_dim]
         
         epsilon_theta_t = self.model(x_t, t, context)
         unc_epsilon_theta_t = self.model(x_t, t, unc_context)

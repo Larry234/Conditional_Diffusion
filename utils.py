@@ -402,6 +402,15 @@ def get_model(args):
             num_res_blocks=args.num_res_blocks,
             dropout=0.15,
         )
+    elif args.arch == "unetencoder":
+        from models.unet import UNetEncoder
+        model = UNetEncoder(
+            T=args.num_timestep,
+            model_channels=args.emb_size,
+            ch_mult=args.channel_mult,
+            num_res_blocks=args.num_res_blocks,
+            dropout=0.15
+        )
     elif args.arch == 'unetic':
         from models.unet import UNetIC
         model = UNetIC(

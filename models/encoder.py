@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from .resnet import ResNet50
+from torchvision.models import resnet18
 
 
 class ClassEncoder(nn.Module):
@@ -28,8 +29,8 @@ class ClassEncoder(nn.Module):
         return torch.cat([atr_embedding, obj_embedding], dim=-1)
     
 
-def ImageEncoder():
-    encoder = ResNet50(10)
+def ImageEncoder(pretrained=False):
+    encoder = resnet18()
     encoder.fc = nn.Identity()
     return encoder
     

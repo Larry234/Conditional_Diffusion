@@ -342,6 +342,117 @@ class UNet(nn.Module):
         assert len(hs) == 0
         return h
     
+class UNetEncoder(nn.Module):
+    def __init__(self, T, model_channels, ch_mult, num_res_blocks, dropout):
+        super().__init__()
+        tdim = model_channels * 4
+        self.time_embedding = TimeEmbedding(T, model_channels, tdim)
+
+        self.input_blocks = nn.ModuleList(
+            [
+                TimestepEmbedSequential(
+                    nn.Conv2d(3, model_channels, 3, stride=1, padding=1)
+                )
+            ]
+        )
+
+        self._feature_size = model_channels
+        input_block_chans = [model_channels]
+        ch = model_channels
+        ds = 1
+        for level, mult in enumerate(ch_mult):
+            for _ in range(num_res_blocks):
+                layers = [
+                    ResBlock(
+                        in_ch=ch,
+                        out_ch=mult * model_channels,
+                        tdim=tdim,
+                        dropout=dropout,
+                    )
+                ]
+                ch = mult * model_channels
+                self.input_blocks.append(TimestepEmbedSequential(*layers))
+                self._feature_size += ch
+                input_block_chans.append(ch)
+            if level != len(ch_mult) - 1:
+                out_ch = ch
+                self.input_blocks.append(
+                    TimestepEmbedSequential(
+                        DownSample(ch)
+                    )
+                )
+                ch = out_ch
+                input_block_chans.append(ch)
+                ds *= 2
+                self._feature_size += ch
+
+        self.middle_block = TimestepEmbedSequential(
+            ResBlock(
+                in_ch=ch,
+                out_ch=ch,
+                tdim=tdim,
+                dropout=dropout,
+            ),
+            ResBlock(
+                in_ch=ch,
+                out_ch=ch,
+                tdim=tdim,
+                dropout=dropout,
+            ),
+        )
+        self._feature_size += ch
+
+        self.output_blocks = nn.ModuleList([])
+        for level, mult in list(enumerate(ch_mult))[::-1]:
+            for i in range(num_res_blocks + 1):
+                ich = input_block_chans.pop()
+                layers = [
+                    ResBlock(
+                        in_ch=ch + ich,
+                        out_ch=model_channels * mult,
+                        tdim=tdim,
+                        dropout=dropout,
+                    )
+                ]
+                ch = model_channels * mult
+                
+                if level and i == num_res_blocks:
+                    out_ch = ch
+                    layers.append(
+                        UpSample(ch)
+                    )
+                    ds //= 2
+                self.output_blocks.append(TimestepEmbedSequential(*layers))
+                self._feature_size += ch
+
+        self.out = nn.Sequential(
+            nn.GroupNorm(32, ch),
+            nn.SiLU(),
+            nn.Conv2d(ch, 3, 3, stride=1, padding=1),
+        )
+ 
+
+    def forward(self, x, t, context=None):
+        # Timestep embedding
+        temb = self.time_embedding(t)
+        temb = temb + context
+        # Downsampling
+        hs = []
+        h = x
+        for layer in self.input_blocks:
+            h = layer(h, temb)
+            hs.append(h)
+        # Middle
+        h = self.middle_block(h, temb)
+        # Upsampling
+        for layer in self.output_blocks:
+            h = torch.cat([h, hs.pop()], dim=1)
+            h = layer(h, temb)
+        h = self.out(h)
+
+        assert len(hs) == 0
+        return h
+    
     
 class UNetIC(nn.Module):
     def __init__(self, T, num_atr, num_obj, ch, ch_mult, num_res_blocks, dropout, drop_prob=0.1):
@@ -972,7 +1083,7 @@ class UNetEncoderAttention(nn.Module):
         """
         hs = []
         emb = self.time_embed(timesteps)
-#         context = context[:, None, :]
+        context = context[:, None, :]
         h = x.type(self.dtype)
         for module in self.input_blocks:
             h = module(h, emb, context=context)
