@@ -55,3 +55,28 @@ class Zappo50K:
                 self.classes.append(f"{va} {vo}")
 
         self.CLS2IDX = {self.classes[i] : i for i in range(len(self.classes))}
+
+class CelebA:
+    def __init__(self):
+        self.ATR2IDX = {
+            'Brown_Hair': 0,
+            'Blond_Hair': 1,
+            'Gray_Hair': 2,
+            'Black_Hair': 3
+        }
+
+        self.OBJ2IDX = {
+            'Male': 0,
+            'Female': 1,
+        }
+
+        self.IDX2ATR = {v : k for k, v in self.ATR2IDX.items()}
+
+        self.IDX2OBJ = {v : k for k, v in self.OBJ2IDX.items()}
+
+        self.classes = []
+        for va in self.IDX2ATR.values():
+            for vo in self.IDX2OBJ.values():
+                self.classes.append(f"{va} {vo}")
+
+        self.CLS2IDX = {self.classes[i] : i for i in range(len(self.classes))}
