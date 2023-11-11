@@ -42,7 +42,11 @@ def main(args):
     
     accelerator = Accelerator()
     
-    CFG = TripleCond()
+    ds_type = args.data.split("/")[-1]
+    if "ut" in ds_type:
+        CFG = Zappo50KTriple()
+    else:
+        CFG = TripleCond()
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -198,7 +202,7 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=str, default='/root/notebooks/nfs/work/dataset/toy_dataset_366_500', help='dataset location')
     parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='weight decay coefficient')
-    parser.add_argument('--batch_size', type=int, default=16, help='batch size')
+    parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=100, help='total training epochs')
     parser.add_argument('--eval_interval', type=int, default=10, help='Frequency of evaluation')
     parser.add_argument('--fix_emb', action='store_true', help='Freeze embedding table wieght to create fixed label embedding')
@@ -206,7 +210,7 @@ if __name__ == '__main__':
     
     # Data hyperparameters
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
-    parser.add_argument('--img_size', type=int, default=128, help='training image size')
+    parser.add_argument('--img_size', type=int, default=64, help='training image size')
     
     # Diffusion hyperparameters
     parser.add_argument('--num_timestep', type=int, default=1000, help='number of timesteps')
@@ -228,6 +232,7 @@ if __name__ == '__main__':
     parser.add_argument('--use_spatial_transformer', action="store_true", help="use transfomer based model to do attention")
     
     # Transformer hyperparameters(Optional)
+    parser.add_argument('--projection_dim', type=int, default=512, help='q, k, v dimension in attention layer')
     parser.add_argument('--num_head_channels', type=int, default=-1, help='attention head channels')
     parser.add_argument('--num_heads', type=int, default=-1, help='number of attention heads, either specify head_channels or num_heads')
     parser.add_argument('--channel_mult', type=list, default=[1, 2, 2, 2], help='width of unet model')

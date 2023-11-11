@@ -68,3 +68,34 @@ class TripleCond:
                     self.classes.append(f"{vs} {va} {vo}")
 
         self.CLS2IDX = {self.classes[i] : i for i in range(len(self.classes))}
+        
+class Zappo50KTriple:
+    def __init__(self):
+        self.SIZE2IDX = {
+            'Left': 0,
+            'Right': 1,
+        }
+        
+        self.ATR2IDX = {
+            'Heel': 0,
+            'Flat': 1,
+        }
+
+        self.OBJ2IDX = {
+            'Boot': 0,
+            'Shoe': 1,
+            'Slipper': 2,
+            'Sandal': 3,
+        }
+        
+        self.IDX2SIZE = {v : k for k, v in self.SIZE2IDX.items()}
+        self.IDX2ATR = {v : k for k, v in self.ATR2IDX.items()}
+        self.IDX2OBJ = {v : k for k, v in self.OBJ2IDX.items()}
+        
+        self.classes = []
+        for vs in self.IDX2SIZE.values():
+            for va in self.IDX2ATR.values():
+                for vo in self.IDX2OBJ.values():
+                    self.classes.append(f"{vs} {va} {vo}")
+
+        self.CLS2IDX = {self.classes[i] : i for i in range(len(self.classes))}
