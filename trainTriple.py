@@ -89,6 +89,25 @@ def main(args):
         w = args.w,
     )
     
+    if args.encoder_path != None:
+        encoder = LoadEncoder(args)
+        trainer = ConditionalDiffusionEncoderTrainer(
+            encoder = encoder,
+            model = model,
+            beta = args.beta,
+            T = args.num_timestep,
+            only_encoder = args.only_encoder
+        )
+        
+        sampler = TripleCondDDIMSamplerEncoder(
+            model = model,
+            encoder = encoder,
+            beta = args.beta,
+            T = args.num_timestep,
+            w = args.w,
+            only_encoder = args.only_encoder
+        )
+    
     cosineScheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer=optimizer, 
         T_max=args.epochs, 
@@ -240,6 +259,9 @@ if __name__ == '__main__':
     parser.add_argument('--channel_mult', type=list, default=[1, 2, 2, 2], help='width of unet model')
     parser.add_argument('--ignored', type=str, nargs='+', default=None, help='exclude folder when loading dataset, for compositional zero-shot generation')
     
+    # CMLIP hyperparameters
+    parser.add_argument('--encoder_path', type=str, default=None, help="pretrained weight path of class encoder")
+    parser.add_argument('--only_encoder', action="store_true", help="only use class encoder in ccip model(two tokens)")
     
     args = parser.parse_args()
     

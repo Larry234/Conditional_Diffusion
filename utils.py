@@ -391,85 +391,7 @@ def get_scheduler(
 
 
 def get_model(args):
-    if args.arch == "unet":
-        from models.unet import UNet
-        model = UNet(
-            T=args.num_timestep,
-            num_atr=args.num_condition[0],
-            num_obj=args.num_condition[1],
-            model_channels=args.emb_size,
-            ch_mult=args.channel_mult,
-            num_res_blocks=args.num_res_blocks,
-            dropout=0.15,
-        )
-    elif args.arch == 'unetic':
-        from models.unet import UNetIC
-        model = UNetIC(
-            T=args.num_timestep,
-            num_atr=args.num_condition[0],
-            num_obj=args.num_condition[1],
-            model_channels=args.emb_size,
-            ch_mult=args.channel_mult,
-            num_res_blocks=args.num_res_blocks,
-            dropout=0.15,
-        )
-    elif args.arch == "unetattention":
-        from models.unet import UNetAttention
-        model = UNetAttention(
-            T=args.num_timestep,
-            image_size=args.img_size,
-            in_channels=3,
-            model_channels=args.emb_size,
-            out_channels=3,
-            num_res_blocks=args.num_res_blocks,
-            attention_resolutions=[8,4,2],
-            dropout=0.15,
-            channel_mult=args.channel_mult,
-            num_atr=args.num_condition[0],
-            num_obj=args.num_condition[1],
-            num_heads=args.num_heads,
-            num_head_channels=args.num_head_channels,
-            use_spatial_transformer=args.use_spatial_transformer,
-            only_table=args.only_table,
-            concat=args.concat
-        )
-    elif args.arch == "unetattentionv2":
-        from models.unet import UNetAttentionV2
-        model = UNetAttentionV2(
-            T=args.num_timestep,
-            image_size=args.img_size,
-            in_channels=3,
-            model_channels=args.emb_size,
-            out_channels=3,
-            num_res_blocks=args.num_res_blocks,
-            attention_resolutions=[8,4,2],
-            dropout=0.15,
-            channel_mult=args.channel_mult,
-            num_classes=args.num_condition[1],
-            num_atrs=args.num_condition[0],
-            num_heads=args.num_heads,
-            num_head_channels=args.num_head_channels,
-            use_spatial_transformer=args.use_spatial_transformer,
-            only_table=args.only_table,
-        )
-    elif args.arch == "unetencoderattention":
-        from models.unet import UNetEncoderAttention
-        model = UNetEncoderAttention(
-            T=args.num_timestep,
-            image_size=args.img_size,
-            in_channels=3,
-            model_channels=args.emb_size,
-            out_channels=3,
-            num_res_blocks=args.num_res_blocks,
-            attention_resolutions=[8,4,2],
-            dropout=0.15,
-            channel_mult=args.channel_mult,
-            num_heads=args.num_heads,
-            num_head_channels=args.num_head_channels,
-            use_spatial_transformer=args.use_spatial_transformer,
-            context_dim=args.projection_dim,
-        )
-    elif args.arch == "unettriple":
+    if args.arch == "unettriple":
         from models.unet import UNetTriple
         model = UNetTriple(
             T=args.num_timestep,
@@ -500,6 +422,23 @@ def get_model(args):
             num_head_channels=args.num_head_channels,
             use_spatial_transformer=args.use_spatial_transformer,
             concat=args.concat
+        )
+    elif args.arch == "unetencoderattentiontriple":
+        from models.unet import UNetEncoderAttention
+        model = UNetEncoderAttention(
+            T=args.num_timestep,
+            image_size=args.img_size,
+            in_channels=3,
+            model_channels=args.emb_size,
+            out_channels=3,
+            num_res_blocks=args.num_res_blocks,
+            attention_resolutions=[8,4,2],
+            dropout=0.15,
+            channel_mult=args.channel_mult,
+            context_dim=args.projection_dim,
+            num_heads=args.num_heads,
+            num_head_channels=args.num_head_channels,
+            use_spatial_transformer=args.use_spatial_transformer,
         )
     
     return model
