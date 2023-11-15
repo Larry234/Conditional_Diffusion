@@ -45,6 +45,8 @@ def main(args):
     ds_type = args.data.split("/")[-1]
     if "ut" in ds_type:
         CFG = Zappo50KTriple()
+    elif "CelebA" in ds_type:
+        CFG = CelebATriple()
     else:
         CFG = TripleCond()
     
