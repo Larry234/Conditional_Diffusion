@@ -64,121 +64,6 @@ def betas_for_alpha_bar(
     return torch.tensor(betas, dtype=torch.float32)
 
 
-
-class GaussianDiffusionTrainer(nn.Module):
-    def __init__(self, model: nn.Module, beta: Tuple[int, int], T: int):
-        super().__init__()
-        self.model = model
-        self.T = T
-
-        # generate T steps of beta
-        self.register_buffer("beta_t", torch.linspace(*beta, T, dtype=torch.float32))
-
-        # calculate the cumulative product of $\alpha$ , named $\bar{\alpha_t}$ in paper
-        alpha_t = 1.0 - self.beta_t
-        alpha_t_bar = torch.cumprod(alpha_t, dim=0)
-
-        # calculate and store two coefficient of $q(x_t | x_0)$
-        self.register_buffer("signal_rate", torch.sqrt(alpha_t_bar))
-        self.register_buffer("noise_rate", torch.sqrt(1.0 - alpha_t_bar))
-
-    def forward(self, x_0, c):
-        # get a random training step $t \sim Uniform({1, ..., T})$
-        t = torch.randint(self.T, size=(x_0.shape[0],), device=x_0.device)
-
-        # generate $\epsilon \sim N(0, 1)$
-        epsilon = torch.randn_like(x_0)
-
-        # predict the noise added from $x_{t-1}$ to $x_t$
-        x_t = (extract(self.signal_rate, t, x_0.shape) * x_0 +
-               extract(self.noise_rate, t, x_0.shape) * epsilon)
-        epsilon_theta = self.model(x_t, t, c)
-
-        # get the gradient
-        loss = F.mse_loss(epsilon_theta, epsilon, reduction="none")
-        loss = torch.sum(loss)
-        return loss
-    
-class ConditionalGaussianDiffusionTrainer(nn.Module):
-    
-    def __init__(self, model: nn.Module, beta: Tuple[int, int], T: int):
-        super().__init__()
-        self.model = model
-        self.T = T
-
-        # generate T steps of beta
-        self.register_buffer("beta_t", torch.linspace(*beta, T, dtype=torch.float32))
-
-        # calculate the cumulative product of $\alpha$ , named $\bar{\alpha_t}$ in paper
-        alpha_t = 1.0 - self.beta_t
-        alpha_t_bar = torch.cumprod(alpha_t, dim=0)
-
-        # calculate and store two coefficient of $q(x_t | x_0)$
-        self.register_buffer("signal_rate", torch.sqrt(alpha_t_bar))
-        self.register_buffer("noise_rate", torch.sqrt(1.0 - alpha_t_bar))
-
-    def forward(self, x_0, c1, c2):
-        # get a random training step $t \sim Uniform({1, ..., T})$
-        t = torch.randint(self.T, size=(x_0.shape[0],), device=x_0.device)
-
-        # generate $\epsilon \sim N(0, 1)$
-        epsilon = torch.randn_like(x_0)
-
-        # predict the noise added from $x_{t-1}$ to $x_t$
-        x_t = (extract(self.signal_rate, t, x_0.shape) * x_0 +
-               extract(self.noise_rate, t, x_0.shape) * epsilon)
-        epsilon_theta = self.model(x_t, t, c1, c2)
-
-        # get the gradient
-        loss = F.mse_loss(epsilon_theta, epsilon, reduction="none")
-#         loss = torch.sum(loss)
-        return loss
-
-class ConditionalDiffusionEncoderTrainer(nn.Module):
-    
-    def __init__(self, encoder: nn.Module, model: nn.Module, beta: Tuple[int, int], T: int, drop_prob: float = 0.1, only_encoder=False):
-        super().__init__()
-        self.encoder = encoder
-        self.model = model
-        self.T = T
-        self.drop_prob = drop_prob
-        self.only_encoder = only_encoder
-
-        # generate T steps of beta
-        self.register_buffer("beta_t", torch.linspace(*beta, T, dtype=torch.float32))
-
-        # calculate the cumulative product of $\alpha$ , named $\bar{\alpha_t}$ in paper
-        alpha_t = 1.0 - self.beta_t
-        alpha_t_bar = torch.cumprod(alpha_t, dim=0)
-
-        # calculate and store two coefficient of $q(x_t | x_0)$
-        self.register_buffer("signal_rate", torch.sqrt(alpha_t_bar))
-        self.register_buffer("noise_rate", torch.sqrt(1.0 - alpha_t_bar))
-
-    def forward(self, x_0, c1, c2):
-        # get a random training step $t \sim Uniform({1, ..., T})$
-        t = torch.randint(self.T, size=(x_0.shape[0],), device=x_0.device)
-        
-        # generate $\epsilon \sim N(0, 1)$
-        epsilon = torch.randn_like(x_0)
-        
-        # get embedding from conditional encoder
-        context = self.encoder.class_encoder(c1, c2)
-        if self.only_encoder:
-            context = context.view(x_0.shape[0], -1, self.encoder.class_emb_dim) # [B, emb_dim * 2] -> [B, 2, emb_dim]
-        else:
-            context = self.encoder.class_projection(context)[:, None, :] # [B, context_dim] -> [B, 1, context_dim]
-        
-        # predict the noise added from $x_{t-1}$ to $x_t$
-        x_t = (extract(self.signal_rate, t, x_0.shape) * x_0 +
-               extract(self.noise_rate, t, x_0.shape) * epsilon)
-        epsilon_theta = self.model(x_t, t, context)
-
-        # get the gradient
-        loss = F.mse_loss(epsilon_theta, epsilon, reduction="none")
-#         loss = torch.sum(loss)
-        return loss
-
 class TripleConditionDiffusionEncoderTrainer(nn.Module):
     
     def __init__(self, encoder: nn.Module, model: nn.Module, beta: Tuple[int, int], T: int, drop_prob: float = 0.1):
@@ -369,7 +254,7 @@ class DDIMSampler(nn.Module):
 
         # predict conditional noise and unconditional noise using model
         epsilon_theta_t = self.model(x_t, t, atr, obj)
-        unc_epsilon_theta_t = self.model(x_t, t, obj, atr, force_drop_ids=True)
+        unc_epsilon_theta_t = self.model(x_t, t, atr, obj, force_drop_ids=True)
         
         # classifier-free guidance
         epsilon_theta_t = (1 + self.w) * epsilon_theta_t - self.w * unc_epsilon_theta_t
