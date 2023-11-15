@@ -16,15 +16,13 @@
 
 import math
 from enum import Enum
-from typing import Optional, Union, Tuple
+from typing import Optional, Union
 
 import torch
 from torch.optim import Optimizer
 from torch.optim import AdamW
-import torch.nn as nn
 from torch.optim.lr_scheduler import LambdaLR
 
-from models.engine import DDPMSampler, DDIMSampler
 # from .utils import logging
 
 from torch.optim.lr_scheduler import _LRScheduler
@@ -399,6 +397,18 @@ def get_model(args):
             num_atr=args.num_condition[1],
             num_obj=args.num_condition[2],
             model_channels=args.emb_size,
+            ch_mult=args.channel_mult,
+            num_res_blocks=args.num_res_blocks,
+            dropout=0.15,
+        )
+    elif args.arch == "unetictriple":
+        from models.unet import UNetICTriple
+        model = UNetICTriple(
+            T=args.num_timestep,
+            num_size=args.num_condition[0],
+            num_atr=args.num_condition[1],
+            num_obj=args.num_condition[2],
+            ch=args.emb_size,
             ch_mult=args.channel_mult,
             num_res_blocks=args.num_res_blocks,
             dropout=0.15,

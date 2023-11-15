@@ -222,6 +222,42 @@ class ResBlockImageClassConcat(ResBlock):
         h = h + self.shortcut(x)
         h = self.attn(h)
         return h
+    
+class ResBlockImageClassConcatTri(ResBlock):
+    def __init__(self, in_ch: int, out_ch: int, tdim: int, dropout: float, attn=False):
+        
+        super().__init__(in_ch, out_ch, tdim, dropout, attn)
+        
+        self.size_proj = nn.Sequential(
+            Swish(),
+            nn.Linear(tdim, out_ch),
+        )
+
+        self.atr_proj = nn.Sequential(
+            Swish(),
+            nn.Linear(tdim, out_ch),
+        )
+        self.obj_proj = nn.Sequential(
+            Swish(),
+            nn.Linear(tdim, out_ch),
+        )
+        self.bottleneck = nn.Conv2d(out_ch*4, out_ch, 1, stride=1, padding=0)
+
+    def forward(self, x, temb, size, atr, obj):
+        
+        h = self.block1(x)
+        temb = self.temb_proj(temb)[:, :, None, None]
+        c1 = self.size_proj(size)[:, :, None, None]
+        c2 = self.atr_proj(atr)[:, :, None, None]
+        c3 = self.obj_proj(obj)[:, :, None, None]
+        c = torch.cat([c1, c2, c3], dim=1).expand(-1, -1, h.shape[-2], h.shape[-1])
+        h = torch.cat([h, c], dim=1)
+        h = self.bottleneck(h)
+        h += temb
+        h = self.block2(h)
+        h = h + self.shortcut(x)
+        h = self.attn(h)
+        return h
 
     
 class UNetTriple(nn.Module):
@@ -344,8 +380,83 @@ class UNetTriple(nn.Module):
 
         assert len(hs) == 0
         return h
-    
-    
+
+
+class UNetICTriple(nn.Module):
+    def __init__(self, T, num_size, num_atr, num_obj, ch, ch_mult, num_res_blocks, dropout, drop_prob=0.1):
+        super().__init__()
+        tdim = ch * 4
+        self.time_embedding = TimeEmbedding(T, ch, tdim)
+        self.size_embedding = ConditionalEmbedding(num_size, ch, tdim, drop_prob)
+        self.atr_embedding = ConditionalEmbedding(num_atr, ch, tdim, drop_prob)
+        self.obj_embedding = ConditionalEmbedding(num_obj, ch, tdim, drop_prob)
+        self.head = nn.Conv2d(3, ch, kernel_size=3, stride=1, padding=1)
+        self.downblocks = nn.ModuleList()
+        chs = [ch]  # record output channel when dowmsample for upsample
+        now_ch = ch
+        for i, mult in enumerate(ch_mult):
+            out_ch = ch * mult
+            for _ in range(num_res_blocks):
+                self.downblocks.append(ResBlockImageClassConcatTri(in_ch=now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout))
+                now_ch = out_ch
+                chs.append(now_ch)
+            if i != len(ch_mult) - 1:
+                self.downblocks.append(DownSample(now_ch))
+                chs.append(now_ch)
+
+        self.middleblocks = nn.ModuleList([
+            ResBlockImageClassConcatTri(now_ch, now_ch, tdim, dropout, attn=False),
+            ResBlockImageClassConcatTri(now_ch, now_ch, tdim, dropout, attn=False),
+        ])
+
+        self.upblocks = nn.ModuleList()
+        for i, mult in reversed(list(enumerate(ch_mult))):
+            out_ch = ch * mult
+            for _ in range(num_res_blocks + 1):
+                self.upblocks.append(ResBlockImageClassConcatTri(in_ch=chs.pop() + now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout, attn=False))
+                now_ch = out_ch
+            if i != 0:
+                self.upblocks.append(UpSample(now_ch))
+        assert len(chs) == 0
+
+        self.tail = nn.Sequential(
+            nn.GroupNorm(32, now_ch),
+            Swish(),
+            nn.Conv2d(now_ch, 3, 3, stride=1, padding=1)
+        )
+ 
+
+    def forward(self, x, t, size, atr, obj, force_drop_ids=None):
+        # Timestep embedding
+        temb = self.time_embedding(t)
+        size_emb = self.size_embedding(size, force_drop_ids=force_drop_ids)
+        atr_emb = self.atr_embedding(atr, force_drop_ids=force_drop_ids)
+        obj_emb = self.obj_embedding(obj, force_drop_ids=force_drop_ids)
+        
+        # Downsampling
+        h = self.head(x)
+        hs = [h]
+        for layer in self.downblocks:
+            if isinstance(layer, DownSample):
+                h = layer(h)
+            else:
+                h = layer(h, temb, size_emb, atr_emb, obj_emb)
+            hs.append(h)
+        # Middle
+        for layer in self.middleblocks:
+            h = layer(h, temb, size_emb, atr_emb, obj_emb)
+        # Upsampling
+        for layer in self.upblocks:
+            if isinstance(layer, ResBlock):
+                h = torch.cat([h, hs.pop()], dim=1)
+            if isinstance(layer, UpSample):
+                h = layer(h)
+            else:
+                h = layer(h, temb, size_emb, atr_emb, obj_emb)
+        h = self.tail(h)
+
+        assert len(hs) == 0
+        return h
         
         
 class UNetEncoderAttention(nn.Module):
