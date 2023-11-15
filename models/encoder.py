@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 # from .resnet import ResNet50
-from torchvision.models import resnet50, ResNet50_Weights
+from torchvision.models import resnet50, ResNet50_Weights, resnet18
 
 
 class ClassEncoder(nn.Module):
@@ -47,7 +47,7 @@ class TripleClassEncoder(nn.Module):
         )
         
         self.obj_emb = nn.Sequential(
-            nn.Embedding(num_embeddings=num_atr, embedding_dim=d_model),
+            nn.Embedding(num_embeddings=num_obj, embedding_dim=d_model),
             nn.Linear(d_model, emb_dim),
             nn.SiLU(),
             nn.Linear(emb_dim, emb_dim)
@@ -80,13 +80,11 @@ class TripleClassEncoderV2(nn.Module):
         size_embedding = self.size_emb(size)
         atr_embedding = self.atr_emb(atr)
         obj_embedding = self.obj_emb(obj)
-        embeddings = torch.cat([size_embedding, atr_embedding, obj_embedding], dim=-1)
-        embeddings = self.mlp(embeddings)
-        return embeddings
-    
+        emb = torch.cat([size_embedding, atr_embedding, obj_embedding], dim=-1)
+        return self.mlp(emb)
 
 def ImageEncoder(pretrained=False):
-    encoder = resnet50(weights=ResNet50_Weights.IMAGENET1K_V2)
+    encoder = resnet18()
     encoder.fc = nn.Identity()
     return encoder
     

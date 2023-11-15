@@ -128,8 +128,6 @@ class CustomImageDatasetTripleCond(Dataset):
         if torch.is_tensor(index):
             index = index.tolist()
         image = Image.open(self.image_path[index]).convert('RGB')
-        label = self.image_path[index].split('/')[-2]
-        label = label.split(' ')
         
         if self.transform is not None:
             image = self.transform(image)

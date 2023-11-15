@@ -176,8 +176,8 @@ def main(args):
             x0 = sampler(x_i, c1, c2, steps=args.steps)
             
             # save image
-            os.makedirs(os.path.join('result', args.exp), exist_ok=True)
-            save_image(x0, os.path.join('result', args.exp, f'epoch_{epoch}.png'))
+            os.makedirs(os.path.join('result', args.exp, args.dir), exist_ok=True)
+            save_image(x0, os.path.join('result', args.exp, args.dir, f'epoch_{epoch}.png'))
         
             # log image
             x0 = x0.permute(0, 2, 3, 1)
@@ -187,7 +187,7 @@ def main(args):
             wandb.log({f"evalution epoch {epoch}": [wandb.Image(image, caption=label) for label, image in images]})
             
             # save model
-            save_root = os.path.join('checkpoints', args.exp)
+            save_root = os.path.join('checkpoints', args.exp, args.dir)
             os.makedirs(save_root, exist_ok=True)
 
             torch.save({
@@ -232,6 +232,7 @@ if __name__ == '__main__':
     parser.add_argument('--beta_schedule', type=str, default='linear', choices=['linear', 'quadratic'])
     parser.add_argument('--eta', type=float, default=0., help='ddim parameter when sampling')
     parser.add_argument('--exp', type=str, default='exp', help='experiment directory name')
+    parser.add_argument('--dir', type=str, default='NoMiss', help='model weight directory')
     parser.add_argument('--sample_method', type=str, default='ddim', choices=['ddpm', 'ddim'], help='sampling method')
     parser.add_argument('--steps', type=int, default=100, help='decreased timesteps using ddim')
     parser.add_argument('--drop_prob', type=float, default=0.1, help='probability of dropping label when training diffusion model')

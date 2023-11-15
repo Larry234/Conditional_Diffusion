@@ -173,8 +173,8 @@ def main(args):
             x0 = sampler(x_i, c1, c2, c3, steps=args.steps)
             
             # save image
-            os.makedirs(os.path.join('result', args.exp), exist_ok=True)
-            save_image(x0, os.path.join('result', args.exp, f'epoch_{epoch}.png'))
+            os.makedirs(os.path.join('result', args.exp, args.dir), exist_ok=True)
+            save_image(x0, os.path.join('result', args.exp, args.dir, f'epoch_{epoch}.png'))
         
             # log image
             x0 = x0.permute(0, 2, 3, 1)
@@ -221,6 +221,7 @@ if __name__ == '__main__':
     # Data hyperparameters
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
     parser.add_argument('--img_size', type=int, default=128, help='training image size')
+    parser.add_argument('--dir', type=str, default="NoMiss")
     
     # Diffusion hyperparameters
     parser.add_argument('--num_timestep', type=int, default=1000, help='number of timesteps')

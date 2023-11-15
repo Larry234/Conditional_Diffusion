@@ -4,9 +4,6 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import models, transforms
 
-
-
-from typing import Tuple
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,6 +11,7 @@ from tqdm import tqdm
 import os
 import wandb
 from accelerate import Accelerator
+import math
 
 from models.embedding import *
 from models.ccip import CMLIPModel
@@ -54,17 +52,26 @@ def main(args):
     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     
     val_ds = CustomImageDatasetTripleCond(
-        root="/root/notebooks/nfs/work/dataset/toy_dataset_366_500",
+        root=args.val,
         transform=transform,
         ignored=args.ignored
     )
     
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     
+    train_sampler = CustomSampler(train_ds)
+    val_sampler = CustomSampler(val_ds)
+
     args.num_condition[0] = len(CFG.SIZE2IDX)
     args.num_condition[1] = len(CFG.ATR2IDX)
     args.num_condition[2] = len(CFG.OBJ2IDX)
     
+    if args.origin:
+        assert args.batch_size < len(CFG.SIZE2IDX) * len(CFG.ATR2IDX) * len(CFG.OBJ2IDX)
+        print("using paper implementation")
+        dataloader = DataLoader(train_ds, batch_size=args.batch_size, sampler=train_sampler, num_workers=args.num_workers)
+        val_loader = DataLoader(val_ds, batch_size=args.batch_size, sampler=val_sampler, num_workers=args.num_workers)
+
     # define models
     model = CMLIPModel(
         num_size = args.num_condition[0],
@@ -72,17 +79,31 @@ def main(args):
         num_obj = args.num_condition[2],
         temperature=args.temperature,
         class_embedding = args.emb_dim,
-        projection_dim=args.projection_dim
+        projection_dim=args.projection_dim,
+        origin=args.origin
     ).to(device)
     
     
     # optimizer and learning rate scheduler
     optimizer = torch.optim.AdamW(model.parameters(), lr=args.lr, weight_decay=args.weight_decay)
     
-    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode="min", patience=2, factor=0.5
-    )
+    # lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+    #     optimizer, mode="min", patience=2, factor=0.5
+    # )
     
+    cosineScheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer=optimizer, 
+        T_max=args.epochs, 
+        eta_min=0, 
+        last_epoch=-1
+    )
+
+    warmUpScheduler = GradualWarmupScheduler(
+        optimizer=optimizer, 
+        multiplier=2.5,
+        warm_epoch=args.epochs // 10, 
+        after_scheduler=cosineScheduler
+    )
     
     dataloader, model, optimizer = accelerator.prepare(dataloader, model, optimizer)
     
@@ -108,7 +129,9 @@ def main(args):
             accelerator.backward(loss)
 #             loss.backward()
             optimizer.step()
-            
+            # Note: we clamp to 4.6052 = ln(100), as in the original paper
+            with torch.no_grad():
+                model.module.logit_scale.clamp_(0, math.log(100))
                         
             # log training process
             wandb.log({"Train loss": loss.item()})
@@ -147,7 +170,7 @@ def main(args):
                 })
         
         print(f"Validation Epoch {epoch} Val avg loss: {val_loss / len(val_loader): .4f}")
-        lr_scheduler.step(val_loss / len(val_loader))
+        warmUpScheduler.step()
         val_loss = 0
                           
         # save model
@@ -181,9 +204,10 @@ if __name__ == '__main__':
     # model hyperparameters
     parser.add_argument('--emb_dim', type=int, default=512, help='Dimension of class embedding')
     parser.add_argument('--projection_dim', type=int, default=256, help='Dimension of class and image projection')
-    parser.add_argument('--temperature', type=float, default=1.)
+    parser.add_argument('--origin', action="store_true")
     
     # Data hyperparameters
+    parser.add_argument('--val', type=str, default="data/toy_dataset_366_500", help="val dataset location")
     parser.add_argument('--num_workers', type=int, default=4, help='number of workers')
     parser.add_argument('--img_size', type=int, default=128, help='training image size')
     parser.add_argument('--exp', type=str, default='exp', help='experiment directory name')
