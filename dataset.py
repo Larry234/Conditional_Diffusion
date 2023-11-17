@@ -158,8 +158,39 @@ class CustomSampler(Sampler):
     def __len__(self):
         return len(self.data)
             
+        
+class ExtendSampler(Sampler):
+    def __init__(self, data):
+        self.data = data
+        
+    def __iter__(self):
+        indices = []
+        index = []
+        rows = []
+        max_class_count = max(Counter(self.data.labels).values())
+        
+        for label in self.data.classes:
+            for i in range(len(self.data.labels)):
+                if self.data.labels[i] == label:
+                    index.append(i)
+            num_samples = len(index)
+            while num_samples < max_class_count:
+                index.extend(random.sample(index, min(max_class_count - num_samples, len(index))))
+                num_samples = len(index)
+            indices.append(index[:max_class_count])
+            index = []
+        
+        for i in zip(*indices):
+            rows.extend(i)
+        
+        return iter(rows)
     
-    
+    def __len__(self):
+        max_class_count = max(Counter(self.data.labels).values())
+        num_classes = len(self.data.classes)
+        return max_class_count * num_classes
+
+
 class Phison:
     
     def __init__(self, transform):
