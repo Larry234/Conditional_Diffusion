@@ -17,7 +17,7 @@ from accelerate import Accelerator
 
 from models.embedding import *
 from models.ccip import CCIPModel
-from dataset import CustomImageDataset, CustomSampler
+from dataset import CustomImageDataset, CustomSampler, ExtendSampler, DecreaseSampler
 from utils import GradualWarmupScheduler, get_model
 from config import *
 
@@ -30,14 +30,13 @@ def main(args):
         config={
             "learning_rate": args.lr,
             "epochs": args.epochs,
-            "dataset": args.data.split('/')[-1],
-            "img_size": args.img_size,
+            "projection_dim": args.projection_dim,
             "batch_size": args.batch_size,
         },
         job_type="training"
     )
     
-#     accelerator = Accelerator()
+    accelerator = Accelerator()
     
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 #     device = torch.device("cpu")
@@ -47,9 +46,13 @@ def main(args):
         transforms.Resize((args.img_size, args.img_size)),
         transforms.ToTensor(),
         transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+        # transforms.RandomRotation(15),
     ])
     
     train_ds = CustomImageDataset(root=args.data, transform=transform, ignored=args.ignored)
+    # balance_sampler = ExtendSampler(train_ds)
+    # balance_sampler = DecreaseSampler(train_ds)
+    # dataloader = DataLoader(train_ds, batch_size=args.batch_size, sampler=balance_sampler, num_workers=args.num_workers)
     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     
     val_ds = CustomImageDataset(
@@ -58,12 +61,14 @@ def main(args):
 #         ignored=args.ignored
     )
     
-    val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    val_loader = DataLoader(val_ds, batch_size=args.batch_size, num_workers=args.num_workers)
     
     ds_type = args.data.split("/")[-1]
     
     if "ut" in ds_type:
         CFG = Zappo50K()
+    elif "CelebA" in ds_type:
+        CFG = CelebA()
     else:
         CFG = toy_dataset()
         
@@ -73,9 +78,6 @@ def main(args):
     IDX2OBJ = CFG.IDX2OBJ
     classes = CFG.classes
         
-#     sampler = CustomSampler(train_ds)
-#     dataloader = DataLoader(train_ds, batch_size=args.batch_size, sampler=sampler, num_workers=args.num_workers)
-#     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     args.num_condition[0] = len(ATR2IDX)
     args.num_condition[1] = len(OBJ2IDX)
     
@@ -108,7 +110,7 @@ def main(args):
 #     )
     
     
-#     dataloader, model, optimizer = accelerator.prepare(dataloader, model, optimizer)
+    dataloader, model, optimizer = accelerator.prepare(dataloader, model, optimizer)
     
     for epoch in range(1, args.epochs + 1):
         
@@ -128,8 +130,8 @@ def main(args):
             loss = model(x, atr=c1, obj=c2)
             train_loss += loss.item()
             optimizer.zero_grad()
-#             accelerator.backward(loss)
-            loss.backward()
+            accelerator.backward(loss)
+            # loss.backward()
             optimizer.step()
             
                         
@@ -138,8 +140,10 @@ def main(args):
             
             progress_bar.set_postfix({
                 "loss": f"{loss.item(): .4f}",
-                "lr": optimizer.state_dict()['param_groups'][0]["lr"]
+                "lr": optimizer.param_groups[0]["lr"]
             })
+        
+        wandb.log({'lr': optimizer.param_groups[0]["lr"]})
             
         print(f"Epoch {epoch} Train avg loss: {train_loss / len(dataloader): .4f}")
         train_loss = 0
@@ -197,7 +201,7 @@ if __name__ == '__main__':
     parser.add_argument('--data', type=str, default='/root/notebooks/nfs/work/dataset/conditional_ut', help='dataset location')
     parser.add_argument('--val', type=str, default='data/ShapeColor_66_500', help="validation dataset location")
     parser.add_argument('--dir', type=str, default="NoMiss")
-    parser.add_argument('--lr', type=float, default=1e-3, help='learning rate')
+    parser.add_argument('--lr', type=float, default=1e-4, help='learning rate')
     parser.add_argument('--batch_size', type=int, default=64, help='batch size')
     parser.add_argument('--epochs', type=int, default=100, help='total training epochs')
     parser.add_argument('--weight_decay', type=float, default=1e-4, help='weight decay coefficient')
