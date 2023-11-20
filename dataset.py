@@ -7,6 +7,8 @@ from torch.utils.data import Dataset, TensorDataset, DataLoader, Sampler
 
 from glob import glob
 import os
+import random
+from collections import Counter
 
 
 class PointDataset(Dataset):
@@ -139,8 +141,64 @@ class CustomSampler(Sampler):
     
     def __len__(self):
         return len(self.data)
-            
-    
+
+class ExtendSampler(Sampler):
+    def __init__(self, data):
+        self.data = data
+        self.length = len(data)
+        
+    def __iter__(self):
+        indices = []
+        index = []
+        rows = []
+        max_class_count = max(Counter(self.data.labels).values())
+        
+        for label in self.data.classes:
+            for i in range(len(self.data.labels)):
+                if self.data.labels[i] == label:
+                    index.append(i)
+            num_samples = len(index)
+            while num_samples < max_class_count:
+                index.extend(random.sample(index, min(max_class_count - num_samples, num_samples)))
+                num_samples = len(index)
+            indices.append(index[:max_class_count])
+            index = []
+        
+        for i in zip(*indices):
+            rows.extend(i)
+        self.length = len(rows)
+
+        return iter(rows)
+
+    def __len__(self):
+        return self.length
+
+class DecreaseSampler(Sampler):
+    def __init__(self, data):
+        self.data = data
+        self.length = len(data)
+        
+    def __iter__(self):
+        indices = []
+        index = []
+        rows = []
+        min_class_count = min(Counter(self.data.labels).values())
+        
+        for label in self.data.classes:
+            for i in range(len(self.data.labels)):
+                if self.data.labels[i] == label:
+                    index.append(i)
+            indices.append(random.sample(index, min_class_count))
+            index = []
+        
+        for i in zip(*indices):
+            rows.extend(i)
+        self.length = len(rows)
+
+        return iter(rows)
+
+    def __len__(self):
+        return self.length
     
 class Phison:
     
