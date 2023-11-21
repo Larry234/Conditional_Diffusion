@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from torchvision import models, transforms
 from torchvision.utils import save_image
+from torchsampler import ImbalancedDatasetSampler
 
 from typing import Tuple
 import argparse
@@ -66,7 +67,8 @@ def main(args):
     classes = CFG.classes
     
     train_ds = CustomImageDataset(root=args.data, transform=transform, ignored=args.ignored)
-    dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    balance_sampler = ImbalancedDatasetSampler(train_ds, labels=train_ds.labels)
+    dataloader = DataLoader(train_ds, batch_size=args.batch_size, sampler=balance_sampler, num_workers=args.num_workers)
     
     # generate samples for each class in evaluation
     n_samples = args.num_condition[0] * args.num_condition[1]
