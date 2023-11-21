@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 from .resnet import ResNet50
-from torchvision.models import resnet18
+from torchvision.models import resnet18, resnet34, resnet50
 
 
 class ClassEncoder(nn.Module):
@@ -30,7 +30,7 @@ class ClassEncoder(nn.Module):
     
 
 def ImageEncoder(pretrained=False):
-    encoder = resnet18()
+    encoder = resnet50()
     encoder.fc = nn.Identity()
     return encoder
     

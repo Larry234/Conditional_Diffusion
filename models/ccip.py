@@ -13,7 +13,7 @@ class CCIPModel(nn.Module):
         num_atr,
         num_obj,
         init_logit_scale=np.log(1 / 0.07),
-        image_embedding=512,
+        image_embedding=2048,
         class_embedding=512,
         projection_dim=256,
         origin=False
