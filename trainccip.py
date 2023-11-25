@@ -50,10 +50,10 @@ def main(args):
     ])
     
     train_ds = CustomImageDataset(root=args.data, transform=transform, ignored=args.ignored)
-    # balance_sampler = ExtendSampler(train_ds)
+    balance_sampler = ExtendSampler(train_ds)
     # balance_sampler = DecreaseSampler(train_ds)
-    # dataloader = DataLoader(train_ds, batch_size=args.batch_size, sampler=balance_sampler, num_workers=args.num_workers)
-    dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    dataloader = DataLoader(train_ds, batch_size=args.batch_size, sampler=balance_sampler, num_workers=args.num_workers)
+#     dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     
     val_ds = CustomImageDataset(
         root=args.val,
