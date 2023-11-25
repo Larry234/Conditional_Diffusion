@@ -5,6 +5,7 @@ from torch.utils.data import DataLoader
 from torchvision import models, transforms
 from torchvision.utils import save_image
 
+from torchsampler import ImbalancedDatasetSampler
 from typing import Tuple
 import argparse
 import matplotlib.pyplot as plt
@@ -60,7 +61,8 @@ def main(args):
     ])
     
     train_ds = CustomImageDatasetTripleCond(root=args.data, transform=transform, ignored=args.ignored)
-    dataloader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+    balance_sampler = ImbalancedDatasetSampler(train_ds, labels=train_ds.labels)
+    dataloader = DataLoader(train_ds, batch_size=args.batch_size, sampler=balance_sampler, num_workers=args.num_workers)
     
     # generate samples for each class in evaluation
     n_samples = args.num_condition[0] * args.num_condition[1] * args.num_condition[2]
@@ -89,24 +91,24 @@ def main(args):
         w = args.w,
     )
     
-    if args.encoder_path != None:
-        encoder = LoadEncoder(args)
-        trainer = ConditionalDiffusionEncoderTrainer(
-            encoder = encoder,
-            model = model,
-            beta = args.beta,
-            T = args.num_timestep,
-            only_encoder = args.only_encoder
-        )
+    # if args.encoder_path != None:
+    #     encoder = LoadEncoder(args)
+    #     trainer = ConditionalDiffusionEncoderTrainer(
+    #         encoder = encoder,
+    #         model = model,
+    #         beta = args.beta,
+    #         T = args.num_timestep,
+    #         only_encoder = args.only_encoder
+    #     )
         
-        sampler = TripleCondDDIMSamplerEncoder(
-            model = model,
-            encoder = encoder,
-            beta = args.beta,
-            T = args.num_timestep,
-            w = args.w,
-            only_encoder = args.only_encoder
-        )
+    #     sampler = TripleCondDDIMSamplerEncoder(
+    #         model = model,
+    #         encoder = encoder,
+    #         beta = args.beta,
+    #         T = args.num_timestep,
+    #         w = args.w,
+    #         only_encoder = args.only_encoder
+    #     )
     
     cosineScheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer=optimizer, 
