@@ -452,7 +452,6 @@ def get_model(args):
         )
     
     return model
-    
 
 
 def get_optimizer(model, args):
