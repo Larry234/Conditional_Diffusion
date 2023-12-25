@@ -7,6 +7,8 @@ from torch.nn import functional as F
 from .embedding import TimeEmbedding, ConditionalEmbedding, LabelEmbedding
 from .attention import SpatialTransformer, AttentionBlock
 
+from typing import Optional
+
 def drop_connect(x, drop_ratio):
     keep_ratio = 1.0 - drop_ratio
     mask = torch.empty([x.shape[0], 1, 1, 1], dtype=x.dtype, device=x.device)
@@ -62,8 +64,45 @@ class DownSample(nn.Module):
         """
         # Apply convolution
         return self.op(x)
+    
 
+class AdaGroupNorm(nn.Module):
+    r"""
+    GroupNorm layer modified to incorporate timestep embeddings.
 
+    Parameters:
+        embedding_dim (`int`): The size of each embedding vector.
+        num_embeddings (`int`): The size of the embeddings dictionary.
+        num_groups (`int`): The number of groups to separate the channels into.
+        act_fn (`str`, *optional*, defaults to `None`): The activation function to use.
+        eps (`float`, *optional*, defaults to `1e-5`): The epsilon value to use for numerical stability.
+    """
+
+    def __init__(
+        self, embedding_dim: int, out_dim: int, num_groups: int, act_fn: Optional[str] = None, eps: float = 1e-5
+    ):
+        super().__init__()
+        self.num_groups = num_groups
+        self.eps = eps
+
+        if act_fn is None:
+            self.act = None
+        else:
+            self.act = Swish()
+
+        self.linear = nn.Linear(embedding_dim, out_dim * 2)
+
+    def forward(self, x: torch.Tensor, emb: torch.Tensor) -> torch.Tensor:
+        if self.act:
+            emb = self.act(emb)
+        emb = self.linear(emb)
+        emb = emb[:, :, None, None]
+        scale, shift = emb.chunk(2, dim=1)
+
+        x = F.group_norm(x, self.num_groups, eps=self.eps)
+        x = x * (1 + scale) + shift
+        return x
+    
 
 class AttnBlock(nn.Module):
     def __init__(self, in_ch):
@@ -107,6 +146,8 @@ class TimestepEmbedSequential(nn.Sequential):
             if isinstance(layer, ResBlockCond):
                 x = layer(x, emb, condition)
             elif isinstance(layer, ResBlock):
+                x = layer(x, emb)
+            elif isinstance(layer, ResBlockAdaGN):
                 x = layer(x, emb)
             elif isinstance(layer, SpatialTransformer):
                 x = layer(x, context)
@@ -192,7 +233,41 @@ class ResBlockDualCondition(ResBlock):
         h = h + self.shortcut(x)
         h = self.attn(h)
         return h
-    
+
+class ResBlockAdaGN(nn.Module):
+    def __init__(self, in_ch, out_ch, tdim, dropout, attn=False):
+        super().__init__()
+        self.norm1 = AdaGroupNorm(tdim, in_ch, num_groups=32)
+        self.conv1 = nn.Conv2d(in_ch, out_ch, kernel_size=3, stride=1, padding=1)
+        self.norm2 = AdaGroupNorm(tdim, out_ch, num_groups=32)
+        self.conv2 = nn.Conv2d(out_ch, out_ch, kernel_size=3, stride=1, padding=1)
+        self.dropout = nn.Dropout(dropout)
+        self.nonlinear = Swish()
+        
+        if in_ch != out_ch:
+            self.shortcut = nn.Conv2d(in_ch, out_ch, 1, stride=1, padding=0)
+        else:
+            self.shortcut = nn.Identity()
+        if attn:
+            self.attn = AttnBlock(out_ch)
+        else:
+            self.attn = nn.Identity()
+            
+            
+    def forward(self, x, temb, scale=1.0):
+        h = x
+        h = self.norm1(h, temb)
+        h = self.nonlinear(h)
+        h = self.conv1(h)
+        h = self.norm2(h, temb)
+        h = self.nonlinear(h)
+        h = self.dropout(h)
+        h = self.conv2(h)
+        
+        h = h + self.shortcut(x)
+        h = self.attn(h)
+        return h
+
     
 class ResBlockImageClassConcat(ResBlock):
     def __init__(self, in_ch: int, out_ch: int, tdim: int, dropout: float, attn=False):
@@ -295,6 +370,124 @@ class UNet(nn.Module):
                 ich = input_block_chans.pop()
                 layers = [
                     ResBlock(
+                        in_ch=ch + ich,
+                        out_ch=model_channels * mult,
+                        tdim=tdim,
+                        dropout=dropout,
+                    )
+                ]
+                ch = model_channels * mult
+                
+                if level and i == num_res_blocks:
+                    out_ch = ch
+                    layers.append(
+                        UpSample(ch)
+                    )
+                    ds //= 2
+                self.output_blocks.append(TimestepEmbedSequential(*layers))
+                self._feature_size += ch
+
+        self.out = nn.Sequential(
+            nn.GroupNorm(32, ch),
+            nn.SiLU(),
+            nn.Conv2d(ch, 3, 3, stride=1, padding=1),
+        )
+ 
+
+    def forward(self, x, t, atr, obj, force_drop_ids=None):
+        # Timestep embedding
+        temb = self.time_embedding(t)
+        cemb = self.atr_embedding(atr, force_drop_ids=force_drop_ids)
+        cemb1 = self.obj_embedding(obj, force_drop_ids=force_drop_ids)
+        temb = temb + cemb + cemb1
+        # Downsampling
+        hs = []
+        h = x
+        for layer in self.input_blocks:
+            h = layer(h, temb)
+            hs.append(h)
+        # Middle
+        h = self.middle_block(h, temb)
+        # Upsampling
+        for layer in self.output_blocks:
+            h = torch.cat([h, hs.pop()], dim=1)
+            h = layer(h, temb)
+        h = self.out(h)
+
+        assert len(hs) == 0
+        return h
+    
+class UNetAdaGN(nn.Module):
+    def __init__(self, T, num_atr, num_obj, model_channels, ch_mult, num_res_blocks, dropout, drop_prob=0.1, only_table=False):
+        super().__init__()
+        tdim = model_channels * 4
+        self.time_embedding = TimeEmbedding(T, model_channels, tdim)
+        if only_table:
+            self.atr_embedding = LabelEmbedding(num_atr, model_channels, drop_prob)
+            self.obj_embedding = LabelEmbedding(num_obj, model_channels, drop_prob)
+        else:
+            self.atr_embedding = ConditionalEmbedding(num_atr, model_channels, tdim, drop_prob)
+            self.obj_embedding = ConditionalEmbedding(num_obj, model_channels, tdim, drop_prob)
+
+        self.input_blocks = nn.ModuleList(
+            [
+                TimestepEmbedSequential(
+                    nn.Conv2d(3, model_channels, 3, stride=1, padding=1)
+                )
+            ]
+        )
+        self._feature_size = model_channels
+        input_block_chans = [model_channels]
+        ch = model_channels
+        ds = 1
+        for level, mult in enumerate(ch_mult):
+            for _ in range(num_res_blocks):
+                layers = [
+                    ResBlockAdaGN(
+                        in_ch=ch,
+                        out_ch=mult * model_channels,
+                        tdim=tdim,
+                        dropout=dropout,
+                    )
+                ]
+                ch = mult * model_channels
+                self.input_blocks.append(TimestepEmbedSequential(*layers))
+                self._feature_size += ch
+                input_block_chans.append(ch)
+            if level != len(ch_mult) - 1:
+                out_ch = ch
+                self.input_blocks.append(
+                    TimestepEmbedSequential(
+                        DownSample(ch)
+                    )
+                )
+                ch = out_ch
+                input_block_chans.append(ch)
+                ds *= 2
+                self._feature_size += ch
+
+        self.middle_block = TimestepEmbedSequential(
+            ResBlockAdaGN(
+                in_ch=ch,
+                out_ch=ch,
+                tdim=tdim,
+                dropout=dropout,
+            ),
+            ResBlockAdaGN(
+                in_ch=ch,
+                out_ch=ch,
+                tdim=tdim,
+                dropout=dropout,
+            ),
+        )
+        self._feature_size += ch
+
+        self.output_blocks = nn.ModuleList([])
+        for level, mult in list(enumerate(ch_mult))[::-1]:
+            for i in range(num_res_blocks + 1):
+                ich = input_block_chans.pop()
+                layers = [
+                    ResBlockAdaGN(
                         in_ch=ch + ich,
                         out_ch=model_channels * mult,
                         tdim=tdim,

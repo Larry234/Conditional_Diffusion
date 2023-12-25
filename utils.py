@@ -402,6 +402,17 @@ def get_model(args):
             num_res_blocks=args.num_res_blocks,
             dropout=0.15,
         )
+    elif args.arch == "unetadagn":
+        from models.unet import UNetAdaGN
+        model = UNetAdaGN(
+            T=args.num_timestep,
+            num_atr=args.num_condition[0],
+            num_obj=args.num_condition[1],
+            model_channels=args.emb_size,
+            ch_mult=args.channel_mult,
+            num_res_blocks=args.num_res_blocks,
+            dropout=0.15,
+        )
     elif args.arch == "unetencoder":
         from models.unet import UNetEncoder
         model = UNetEncoder(
