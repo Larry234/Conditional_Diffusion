@@ -401,6 +401,18 @@ def get_model(args):
             num_res_blocks=args.num_res_blocks,
             dropout=0.15,
         )
+    elif args.arch == "unetadagntriple":
+        from models.unet import UNetAdaGNTriple
+        model = UNetAdaGNTriple(
+            T=args.num_timestep,
+            num_size=args.num_condition[0],
+            num_atr=args.num_condition[1],
+            num_obj=args.num_condition[2],
+            model_channels=args.emb_size,
+            ch_mult=args.channel_mult,
+            num_res_blocks=args.num_res_blocks,
+            dropout=0.15,
+        )
     elif args.arch == "unetictriple":
         from models.unet import UNetICTriple
         model = UNetICTriple(
