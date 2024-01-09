@@ -401,6 +401,7 @@ def get_model(args):
             ch_mult=args.channel_mult,
             num_res_blocks=args.num_res_blocks,
             dropout=0.15,
+            compose=args.compose
         )
     elif args.arch == "unetadagn":
         from models.unet import UNetAdaGN
@@ -412,6 +413,7 @@ def get_model(args):
             ch_mult=args.channel_mult,
             num_res_blocks=args.num_res_blocks,
             dropout=0.15,
+            compose=args.compose,
         )
     elif args.arch == "unetencoder":
         from models.unet import UNetEncoder
@@ -432,6 +434,7 @@ def get_model(args):
             ch_mult=args.channel_mult,
             num_res_blocks=args.num_res_blocks,
             dropout=0.15,
+            compose=args.compose
         )
     elif args.arch == "unetattention":
         from models.unet import UNetAttention
@@ -452,7 +455,8 @@ def get_model(args):
             num_head_channels=args.num_head_channels,
             use_spatial_transformer=args.use_spatial_transformer,
             only_table=args.only_table,
-            concat=args.concat
+            concat=args.concat,
+            compose=args.compose
         )
     elif args.arch == "unetattentionv2":
         from models.unet import UNetAttentionV2
