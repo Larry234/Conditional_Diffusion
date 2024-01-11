@@ -9,6 +9,7 @@ from glob import glob
 import os
 import random
 from collections import Counter
+import csv
 
 
 class PointDataset(Dataset):
@@ -118,6 +119,53 @@ class CustomImageDatasetTripleCond(Dataset):
             image = self.transform(image)
         
         return {"image": image, "size": self.labels[index][0], "atr": self.labels[index][1], "obj": self.labels[index][2]}
+    
+class CompoisitionDataset(Dataset):
+    def __init__(self, data_root, metadata, target, phase, transform=None):
+        self.data, train_data, val_data = [], [], []
+        self.labels, label_train, label_val = [], [], []
+        self.transform = transform
+        self.phase = phase
+        if phase == "train" or phase == "val":
+            with open(os.path.join(data_root, metadata), newline='') as csvfile:
+                rows = csv.reader(csvfile)
+                for row in rows:
+                    img, category, settype = row
+                    category = int(category == target)
+                    if settype == "train":
+                        train_data.append(img)
+                        label_train.append(category)
+                    elif settype == "val":
+                        val_data.append(img)
+                        label_val.append(category)
+        elif phase == "test":
+            self.data = glob(os.path.join(data_root, "**", "*.jpg"))
+
+
+        if phase == "train":
+            self.data = train_data
+            self.labels = label_train
+        elif phase == "val":
+            self.data = val_data
+            self.labels = label_val
+
+
+    def __len__(self):
+        return len(self.data)
+    
+    def __getitem__(self, index):
+        if torch.is_tensor(index):
+            index = index.tolist()
+
+        img = Image.open(self.data[index]).convert("RGB")
+        if self.transform is not None:
+            img = self.transform(img)
+
+        if self.phase in ["train", "val"]:
+            label = torch.tensor(self.labels[index], dtype=torch.float)
+            return img, label
+        else:
+            return img
 
 class CustomSampler(Sampler):
     def __init__(self, data):
@@ -200,62 +248,3 @@ class DecreaseSampler(Sampler):
     def __len__(self):
         return self.length
     
-class Phison:
-    
-    def __init__(self, transform):
-        self.cond2idx = {'good': 0, 'shift': 1, 'broke': 2, 'short': 3} 
-        self.comp2idx = {'C0201': 0, 'LED0603': 1, 'SOT23': 2, 'TVS523': 3, 'R0805': 4, 'BGA4P': 5}
-
-        self.idx2cond = {v: k for k, v in self.cond2idx.items()}
-        self.idx2comp = {v: k for k, v in self.comp2idx.items()}
-        
-        self.transform = transform
-        
-        ds = load_dataset("barry556652/special_500", split="train")
-        self.image_column, self.caption_column = ds.column_names
-        self.ds = ds.with_transform(self.preprocess_train)
-    
-    def preprocess_train(self, examples):
-        labels = [caption.split(" ") for caption in examples[self.caption_column]]
-        images = [image.convert("RGB") for image in examples[self.image_column]]
-        examples["pixel_values"] = [self.transform(image) for image in images]
-        examples["condition_label"] = [torch.tensor(self.cond2idx[c[0]], dtype=torch.int64) for c in labels]
-        examples["class_label"] = [torch.tensor(self.comp2idx[c[1]], dtype=torch.int64) for c in labels]
-        return examples
-    
-    def collate_fn(self, examples):
-        pixel_values = torch.stack([example["pixel_values"] for example in examples])
-        pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
-        class_label = torch.stack([example["class_label"] for example in examples])
-        condition_label = torch.stack([example["condition_label"] for example in examples])
-        return {"pixel_values": pixel_values, "condition_label": condition_label, "class_label": class_label}
-    
-    def get_loader(self, batch_size=64, num_workers=4):
-        loader = DataLoader(self.ds, shuffle=True, batch_size=batch_size, collate_fn=self.collate_fn, num_workers=num_workers)
-        return loader
-    
-    def get_idx2cond(self):
-        return self.idx2cond
-    
-    def get_idx2comp(self):
-        return self.idx2comp
-    
-    
-    
-def line_dataset(n=8000):
-    rng = np.random.default_rng(42)
-    x = rng.uniform(-0.5, 0.5, n)
-    y = rng.uniform(-1, 1, n)
-    X = np.stack((x, y), axis=1)
-    X *= 4
-    return TensorDataset(torch.from_numpy(X.astype(np.float32)))
-
-def generate_circle(center, radius, num_samples) -> np.ndarray:
-    """ generate points inside a circle with cetner and radius """
-    theta = np.linspace(0, 2*np.pi, num_samples)
-    centerX, centerY = center
-    a, b = radius * np.cos(theta) + centerX, radius * np.sin(theta) + centerY
-
-    r = np.random.rand((num_samples)) * radius
-    x, y = r * np.cos(theta) + centerX, r * np.sin(theta) + centerY
-    return np.stack((x, y), axis=1)
