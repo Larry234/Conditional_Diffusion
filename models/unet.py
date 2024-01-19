@@ -712,12 +712,13 @@ class UNetIC(nn.Module):
         self.atr_embedding = ConditionalEmbedding(num_atr, ch, tdim, drop_prob)
         self.obj_embedding = ConditionalEmbedding(num_obj, ch, tdim, drop_prob)
         self.compose = compose
-        self.projection = nn.Sequential(
-            nn.Linear(tdim*2, 4096),
-            nn.LayerNorm(4096),
-            nn.Dropout(0.5),
-            nn.Linear(4096, tdim),
-        )
+        if compose:
+            self.projection = nn.Sequential(
+                nn.Linear(tdim*2, 4096),
+                nn.LayerNorm(4096),
+                nn.Dropout(0.5),
+                nn.Linear(4096, tdim),
+            )
         self.head = nn.Conv2d(3, ch, kernel_size=3, stride=1, padding=1)
         self.downblocks = nn.ModuleList()
         chs = [ch]  # record output channel when dowmsample for upsample
@@ -918,12 +919,13 @@ class UNetAttention(nn.Module):
             else:
                 self.obj_emb = ConditionalEmbedding(num_obj, model_channels, context_dim, drop_prob)
                 
-        self.projection = nn.Sequential(
-            nn.Linear(context_dim*2, 4096),
-            nn.LayerNorm(4096),
-            nn.Dropout(0.5),
-            nn.Linear(4096, context_dim),
-        )
+        if compose:
+            self.projection = nn.Sequential(
+                nn.Linear(context_dim*2, 4096),
+                nn.LayerNorm(4096),
+                nn.Dropout(0.5),
+                nn.Linear(4096, context_dim),
+            )
 
         self.input_blocks = nn.ModuleList(
             [
