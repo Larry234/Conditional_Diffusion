@@ -245,6 +245,7 @@ if __name__ == '__main__':
     parser.add_argument('--sample_method', type=str, default='ddim', choices=['ddpm', 'ddim'], help='sampling method')
     parser.add_argument('--steps', type=int, default=100, help='decreased timesteps using ddim')
     parser.add_argument('--drop_prob', type=float, default=0.1, help='probability of dropping label when training diffusion model')
+    parser.add_argument('--compose', action="store_true")
     
     # UNet hyperparameters
     parser.add_argument('--num_res_blocks', type=int, default=2, help='number of residual blocks in unet')

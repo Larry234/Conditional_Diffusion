@@ -333,12 +333,38 @@ class ResBlockImageClassConcatTri(ResBlock):
         h = h + self.shortcut(x)
         h = self.attn(h)
         return h
+    
+class ResBlockImageClassConcatCop(ResBlock):
+    def __init__(self, in_ch: int, out_ch: int, tdim: int, dropout: float, attn=False):
+        
+        super().__init__(in_ch, out_ch, tdim, dropout, attn)
+        self.proj = nn.Sequential(
+            Swish(),
+            nn.Linear(tdim, out_ch),
+        )
+        
+        self.bottleneck = nn.Conv2d(out_ch*2, out_ch, 1, stride=1, padding=0)
+
+    def forward(self, x, temb, cemb=None):
+        
+        h = self.block1(x)
+        temb = self.temb_proj(temb)[:, :, None, None]
+        c = self.proj(cemb)[:, :, None, None]
+        c = c.expand(-1, -1, h.shape[-2], h.shape[-1])
+        h = torch.cat([h, c], dim=1)
+        h = self.bottleneck(h)
+        h += temb
+        h = self.block2(h)
+        h = h + self.shortcut(x)
+        h = self.attn(h)
+        return h
 
     
 class UNetTriple(nn.Module):
-    def __init__(self, T, num_size, num_atr, num_obj, model_channels, ch_mult, num_res_blocks, dropout, drop_prob=0.1, only_table=False):
+    def __init__(self, T, num_size, num_atr, num_obj, model_channels, ch_mult, num_res_blocks, dropout, drop_prob=0.1, only_table=False, compose=False):
         super().__init__()
         tdim = model_channels * 4
+        self.compose = compose
         self.time_embedding = TimeEmbedding(T, model_channels, tdim)
         if only_table:
             self.size_embedding = LabelEmbedding(num_size, model_channels, drop_prob)
@@ -356,6 +382,15 @@ class UNetTriple(nn.Module):
                 )
             ]
         )
+        
+        if compose:
+            self.projection = nn.Sequential(
+                nn.Linear(tdim*3, 4096),
+                nn.LayerNorm(4096),
+                nn.Dropout(0.5),
+                nn.Linear(4096, tdim),
+            )
+            
         self._feature_size = model_channels
         input_block_chans = [model_channels]
         ch = model_channels
@@ -430,6 +465,11 @@ class UNetTriple(nn.Module):
             nn.SiLU(),
             nn.Conv2d(ch, 3, 3, stride=1, padding=1),
         )
+    
+    def _compose(self, size_emb, atr_emb, obj_emb):
+        emb = torch.cat([size_emb, atr_emb, obj_emb], dim=-1)
+        emb = self.projection(emb)
+        return emb
  
 
     def forward(self, x, t, size, atr, obj, force_drop_ids=None):
@@ -438,7 +478,10 @@ class UNetTriple(nn.Module):
         semb = self.size_embedding(size, force_drop_ids=force_drop_ids)
         cemb = self.atr_embedding(atr, force_drop_ids=force_drop_ids)
         cemb1 = self.obj_embedding(obj, force_drop_ids=force_drop_ids)
-        temb = temb + semb + cemb + cemb1
+        if self.compose:
+            temb = temb + self._compose(semb, cemb, cemb1)
+        else:
+            temb = temb + semb + cemb + cemb1
         # Downsampling
         hs = []
         h = x
@@ -458,9 +501,10 @@ class UNetTriple(nn.Module):
 
     
 class UNetAdaGNTriple(nn.Module):
-    def __init__(self, T, num_size, num_atr, num_obj, model_channels, ch_mult, num_res_blocks, dropout, drop_prob=0.1, only_table=False):
+    def __init__(self, T, num_size, num_atr, num_obj, model_channels, ch_mult, num_res_blocks, dropout, drop_prob=0.1, only_table=False, compose=False):
         super().__init__()
         tdim = model_channels * 4
+        self.compose = compose
         self.time_embedding = TimeEmbedding(T, model_channels, tdim)
         if only_table:
             self.size_embedding = LabelEmbedding(num_size, model_channels, drop_prob)
@@ -470,7 +514,15 @@ class UNetAdaGNTriple(nn.Module):
             self.size_embedding = ConditionalEmbedding(num_size, model_channels, tdim, drop_prob)
             self.atr_embedding = ConditionalEmbedding(num_atr, model_channels, tdim, drop_prob)
             self.obj_embedding = ConditionalEmbedding(num_obj, model_channels, tdim, drop_prob)
-
+        
+        if compose:
+            self.projection = nn.Sequential(
+                nn.Linear(tdim*3, 4096),
+                nn.LayerNorm(4096),
+                nn.Dropout(0.5),
+                nn.Linear(4096, tdim),
+            )
+        
         self.input_blocks = nn.ModuleList(
             [
                 TimestepEmbedSequential(
@@ -552,15 +604,22 @@ class UNetAdaGNTriple(nn.Module):
             nn.SiLU(),
             nn.Conv2d(ch, 3, 3, stride=1, padding=1),
         )
+        
+    def _compose(self, size_emb, atr_emb, obj_emb):
+        emb = torch.cat([size_emb, atr_emb, obj_emb], dim=-1)
+        emb = self.projection(emb)
+        return emb
  
-
     def forward(self, x, t, size, atr, obj, force_drop_ids=None):
         # Timestep embedding
         temb = self.time_embedding(t)
         semb = self.size_embedding(size, force_drop_ids=force_drop_ids)
         cemb = self.atr_embedding(atr, force_drop_ids=force_drop_ids)
         cemb1 = self.obj_embedding(obj, force_drop_ids=force_drop_ids)
-        temb = temb + semb + cemb + cemb1
+        if self.compose:
+            temb = temb + self._compose(semb, cemb, cemb1)
+        else:
+            temb = temb + semb + cemb + cemb1
         # Downsampling
         hs = []
         h = x
@@ -580,13 +639,22 @@ class UNetAdaGNTriple(nn.Module):
 
 
 class UNetICTriple(nn.Module):
-    def __init__(self, T, num_size, num_atr, num_obj, ch, ch_mult, num_res_blocks, dropout, drop_prob=0.1):
+    def __init__(self, T, num_size, num_atr, num_obj, ch, ch_mult, num_res_blocks, dropout, drop_prob=0.1, compose=False):
         super().__init__()
         tdim = ch * 4
+        self.compose = compose
         self.time_embedding = TimeEmbedding(T, ch, tdim)
         self.size_embedding = ConditionalEmbedding(num_size, ch, tdim, drop_prob)
         self.atr_embedding = ConditionalEmbedding(num_atr, ch, tdim, drop_prob)
         self.obj_embedding = ConditionalEmbedding(num_obj, ch, tdim, drop_prob)
+        
+        if compose:
+            self.projection = nn.Sequential(
+                nn.Linear(tdim*3, 4096),
+                nn.LayerNorm(4096),
+                nn.Dropout(0.5),
+                nn.Linear(4096, tdim),
+            )
         self.head = nn.Conv2d(3, ch, kernel_size=3, stride=1, padding=1)
         self.downblocks = nn.ModuleList()
         chs = [ch]  # record output channel when dowmsample for upsample
@@ -594,24 +662,37 @@ class UNetICTriple(nn.Module):
         for i, mult in enumerate(ch_mult):
             out_ch = ch * mult
             for _ in range(num_res_blocks):
-                self.downblocks.append(ResBlockImageClassConcatTri(in_ch=now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout))
+                if self.compose:
+                    self.downblocks.append(ResBlockImageClassConcatCop(in_ch=now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout))
+                else:
+                    self.downblocks.append(ResBlockImageClassConcatTri(in_ch=now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout))
                 now_ch = out_ch
                 chs.append(now_ch)
             if i != len(ch_mult) - 1:
                 self.downblocks.append(DownSample(now_ch))
                 chs.append(now_ch)
-
-        self.middleblocks = nn.ModuleList([
-            ResBlockImageClassConcatTri(now_ch, now_ch, tdim, dropout, attn=False),
-            ResBlockImageClassConcatTri(now_ch, now_ch, tdim, dropout, attn=False),
-        ])
+        
+        if self.compose:
+            self.middleblocks = nn.ModuleList([
+                ResBlockImageClassConcatCop(now_ch, now_ch, tdim, dropout, attn=False),
+                ResBlockImageClassConcatCop(now_ch, now_ch, tdim, dropout, attn=False),
+            ])
+        else:
+            self.middleblocks = nn.ModuleList([
+                ResBlockImageClassConcatTri(now_ch, now_ch, tdim, dropout, attn=False),
+                ResBlockImageClassConcatTri(now_ch, now_ch, tdim, dropout, attn=False),
+            ])
 
         self.upblocks = nn.ModuleList()
         for i, mult in reversed(list(enumerate(ch_mult))):
             out_ch = ch * mult
             for _ in range(num_res_blocks + 1):
-                self.upblocks.append(ResBlockImageClassConcatTri(in_ch=chs.pop() + now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout, attn=False))
+                if self.compose:
+                    self.upblocks.append(ResBlockImageClassConcatCop(in_ch=chs.pop() + now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout, attn=False))
+                else:
+                    self.upblocks.append(ResBlockImageClassConcatTri(in_ch=chs.pop() + now_ch, out_ch=out_ch, tdim=tdim, dropout=dropout, attn=False))
                 now_ch = out_ch
+                
             if i != 0:
                 self.upblocks.append(UpSample(now_ch))
         assert len(chs) == 0
@@ -621,6 +702,11 @@ class UNetICTriple(nn.Module):
             Swish(),
             nn.Conv2d(now_ch, 3, 3, stride=1, padding=1)
         )
+        
+    def _compose(self, size_emb, atr_emb, obj_emb):
+        emb = torch.cat([size_emb, atr_emb, obj_emb], dim=-1)
+        emb = self.projection(emb)
+        return emb
  
 
     def forward(self, x, t, size, atr, obj, force_drop_ids=None):
@@ -630,6 +716,8 @@ class UNetICTriple(nn.Module):
         atr_emb = self.atr_embedding(atr, force_drop_ids=force_drop_ids)
         obj_emb = self.obj_embedding(obj, force_drop_ids=force_drop_ids)
         
+        if self.compose:
+            cemb = self._compose(size_emb, atr_emb, obj_emb)
         # Downsampling
         h = self.head(x)
         hs = [h]
@@ -637,11 +725,17 @@ class UNetICTriple(nn.Module):
             if isinstance(layer, DownSample):
                 h = layer(h)
             else:
-                h = layer(h, temb, size_emb, atr_emb, obj_emb)
+                if self.compose:
+                    h = layer(h, temb, cemb)
+                else:
+                    h = layer(h, temb, size_emb, atr_emb, obj_emb)
             hs.append(h)
         # Middle
         for layer in self.middleblocks:
-            h = layer(h, temb, size_emb, atr_emb, obj_emb)
+            if self.compose:
+                h = layer(h, temb, cemb)
+            else:
+                h = layer(h, temb, size_emb, atr_emb, obj_emb)
         # Upsampling
         for layer in self.upblocks:
             if isinstance(layer, ResBlock):
@@ -649,7 +743,10 @@ class UNetICTriple(nn.Module):
             if isinstance(layer, UpSample):
                 h = layer(h)
             else:
-                h = layer(h, temb, size_emb, atr_emb, obj_emb)
+                if self.compose:
+                    h = layer(h, temb, cemb)
+                else:
+                    h = layer(h, temb, size_emb, atr_emb, obj_emb)
         h = self.tail(h)
 
         assert len(hs) == 0
@@ -892,6 +989,11 @@ class UNetEncoderAttention(nn.Module):
 #             #nn.LogSoftmax(dim=1)  # change to cross_entropy and produce non-normalized logits
 #         )
 
+    def _compose(self, size_emb, atr_emb, obj_emb):
+        emb = torch.cat([size_emb, atr_emb, obj_emb], dim=-1)
+        emb = self.projection(emb)
+        return emb
+
 
     def forward(self, x, timesteps=None, context=None, **kwargs):
         """
@@ -976,7 +1078,8 @@ class UNetAttentionTripleCond(nn.Module):
         context_dim=None,                 # custom transformer support
         n_embed=None,                     # custom support for prediction of discrete ids into codebook of first stage vq model
         legacy=True,
-        concat=False
+        concat=False,
+        compose=False
     ):
         super().__init__()
 #         if use_spatial_transformer:
@@ -1010,6 +1113,7 @@ class UNetAttentionTripleCond(nn.Module):
         self.num_head_channels = num_head_channels
         self.predict_codebook_ids = n_embed is not None
         self.concat = concat
+        self.compose = compose
 
         time_embed_dim = model_channels * 4
         label_embed_dim = time_embed_dim // 2 if self.concat else time_embed_dim
@@ -1024,6 +1128,14 @@ class UNetAttentionTripleCond(nn.Module):
             
         if self.num_atr is not None:
             self.atr_emb = ConditionalEmbedding(num_atr, model_channels, label_embed_dim, drop_prob)
+            
+        if compose:
+            self.projection = nn.Sequential(
+                nn.Linear(context_dim*3, 4096),
+                nn.LayerNorm(4096),
+                nn.Dropout(0.5),
+                nn.Linear(4096, context_dim),
+            )
 
         self.input_blocks = nn.ModuleList(
             [
@@ -1183,6 +1295,11 @@ class UNetAttentionTripleCond(nn.Module):
 #             #nn.LogSoftmax(dim=1)  # change to cross_entropy and produce non-normalized logits
 #         )
 
+    def _compose(self, size_emb, atr_emb, obj_emb):
+        emb = torch.cat([size_emb, atr_emb, obj_emb], dim=-1)
+        emb = self.projection(emb)
+        return emb
+
 
     def forward(self, x, timesteps=None, c1=None, c2=None, c3=None, force_drop_ids=False, **kwargs):
         """
@@ -1198,13 +1315,20 @@ class UNetAttentionTripleCond(nn.Module):
         context = None
         if self.num_obj is not None and self.num_atr is not None and self.num_size is not None:
             assert c1.shape == (x.shape[0],) and c2.shape == (x.shape[0],) and c3.shape == (x.shape[0],)
-            c1 = self.size_emb(c1, force_drop_ids=force_drop_ids)[:, None, :]
-            c2 = self.atr_emb(c2, force_drop_ids=force_drop_ids)[:, None, :]
-            c3 = self.obj_emb(c3, force_drop_ids=force_drop_ids)[:, None, :]
-            if self.concat:
-                context = torch.cat([c1, c2, c3], dim=2)
+            if self.compose:
+                c1 = self.size_emb(c1, force_drop_ids=force_drop_ids)
+                c2 = self.atr_emb(c2, force_drop_ids=force_drop_ids)
+                c3 = self.obj_emb(c3, force_drop_ids=force_drop_ids)
+                context = self._compose(c1, c2, c3)[:, None, :]
             else:
-                context = torch.cat([c1, c2, c3], dim=1)
+                c1 = self.size_emb(c1, force_drop_ids=force_drop_ids)[:, None, :]
+                c2 = self.atr_emb(c2, force_drop_ids=force_drop_ids)[:, None, :]
+                c3 = self.obj_emb(c3, force_drop_ids=force_drop_ids)[:, None, :]
+                if self.concat:
+                    context = torch.cat([c1, c2, c3], dim=2)
+                else:
+                    context = torch.cat([c1, c2, c3], dim=1)
+                    
         h = x.type(self.dtype)
         for module in self.input_blocks:
             h = module(h, emb, context=context)

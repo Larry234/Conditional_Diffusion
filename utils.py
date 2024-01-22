@@ -400,6 +400,7 @@ def get_model(args):
             ch_mult=args.channel_mult,
             num_res_blocks=args.num_res_blocks,
             dropout=0.15,
+            compose=args.compose,
         )
     elif args.arch == "unetadagntriple":
         from models.unet import UNetAdaGNTriple
@@ -412,6 +413,7 @@ def get_model(args):
             ch_mult=args.channel_mult,
             num_res_blocks=args.num_res_blocks,
             dropout=0.15,
+            compose=args.compose,
         )
     elif args.arch == "unetictriple":
         from models.unet import UNetICTriple
@@ -424,6 +426,7 @@ def get_model(args):
             ch_mult=args.channel_mult,
             num_res_blocks=args.num_res_blocks,
             dropout=0.15,
+            compose=args.compose,
         )
     elif args.arch == "unetattentiontriple":
         from models.unet import UNetAttentionTripleCond
@@ -443,7 +446,8 @@ def get_model(args):
             num_heads=args.num_heads,
             num_head_channels=args.num_head_channels,
             use_spatial_transformer=args.use_spatial_transformer,
-            concat=args.concat
+            concat=args.concat,
+            compose=args.compose,
         )
     elif args.arch == "unetencoderattentiontriple":
         from models.unet import UNetEncoderAttention
