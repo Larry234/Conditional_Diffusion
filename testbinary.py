@@ -12,6 +12,7 @@ from accelerate import Accelerator
 import os
 from collections import OrderedDict
 from tqdm import tqdm
+import csv
 
 def main(args):
 
@@ -79,6 +80,10 @@ def main(args):
     attr_model.eval()
     obj_model.eval()
     i = 0
+    attr_corrects = 0
+    obj_corrects = 0
+    total_corrects = 0
+    
     progress_bar = tqdm(test_loader, desc="Testing")
     for image in progress_bar:
         image = image.to(device)
@@ -88,11 +93,20 @@ def main(args):
 
             attr_pred = attr_pred >= 0.5
             obj_pred = obj_pred >= 0.5
+            attr_corrects += torch.sum(attr_pred)
+            obj_corrects += torch.sum(obj_pred)
             match = (attr_pred * obj_pred).view(-1)
+            total_corrects += match
             for img in image[match]:
                 img = img * 0.5 + 0.5
                 save_image(img, os.path.join(args.save_folder, f"{i:05d}.jpg"))
                 i += 1
+                
+    with open(os.path.join(args.save_folder, "result.csv"), "w", newline="") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["Attribute corrects", "Object corrects", "All corrects"])
+        writer.writerow([attr_corrects, obj_corrects, total_corrects])
+        
     print(f"Select a total of {i} images!")
 
 
