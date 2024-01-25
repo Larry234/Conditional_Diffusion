@@ -39,6 +39,7 @@ def main(args):
 
     attr_trainds = CompoisitionDataset(args.data, args.attr_meta, attr, "train", transform)
     attr_valds = CompoisitionDataset(args.data, args.attr_meta, attr, "val", transform)
+    balance_sampler = ImbalancedDatasetSampler(attr_trainds, labels=attr_trainds.labels)
     attr_trainloader = torch.utils.data.DataLoader(attr_trainds, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
     attr_valloader = torch.utils.data.DataLoader(attr_valds, batch_size=args.batch_size, num_workers=args.num_workers)
 
@@ -112,6 +113,7 @@ def main(args):
             best_acc = acc
             torch.save(attr_model.state_dict(), os.path.join(save_root, "best_attr.pth"))
 
+    best_acc = 0
     obj_trainloader, obj_valloader, obj_model, obj_optimizer, criterion = accelerator.prepare(obj_trainloader, obj_valloader, obj_model, obj_optimizer, criterion)
     print(f"Training binary {obj} classifier")
     for epoch in range(1, args.epoch + 1):
