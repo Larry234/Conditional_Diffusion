@@ -93,10 +93,10 @@ def main(args):
 
             attr_pred = attr_pred >= 0.5
             obj_pred = obj_pred >= 0.5
-            attr_corrects += torch.sum(attr_pred)
-            obj_corrects += torch.sum(obj_pred)
+            attr_corrects += torch.sum(attr_pred).item()
+            obj_corrects += torch.sum(obj_pred).item()
             match = (attr_pred * obj_pred).view(-1)
-            total_corrects += match
+            total_corrects += torch.sum(match).item()
             for img in image[match]:
                 img = img * 0.5 + 0.5
                 save_image(img, os.path.join(args.save_folder, f"{i:05d}.jpg"))

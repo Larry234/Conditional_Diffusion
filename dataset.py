@@ -139,7 +139,7 @@ class CompoisitionDataset(Dataset):
                         val_data.append(img)
                         label_val.append(category)
         elif phase == "test":
-            self.data = glob(os.path.join(data_root, "**", "*.jpg"))
+            self.data = glob(os.path.join(data_root, "*.jpg"))
 
 
         if phase == "train":
