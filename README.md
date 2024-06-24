@@ -1,6 +1,6 @@
-# Conditional Diffusion MNIST
+# Compositional Class label-to-image Diffusion Model (CCDM)
 
-[script.py](script.py) is a minimal, self-contained implementation of a conditional diffusion model. It learns to generate MNIST digits, conditioned on a class label. The neural network architecture is a small U-Net. This code is modified from [this excellent repo](https://github.com/cloneofsimo/minDiffusion) which does unconditional generation. The diffusion model is a [Denoising Diffusion Probabilistic Model (DDPM)](https://arxiv.org/abs/2006.11239).
+CCDM is a diffusion model conditioned on compositional class labels. It learns to generate class features different compositional class labels. The neural network architecture is a U-Net, we implemented four different conditioning modules to compare which is the best for compositional class labels. This code is modified from [this excellent repo](https://github.com/cloneofsimo/minDiffusion) which does unconditional generation. The diffusion model is a [Denoising Diffusion Probabilistic Model (DDPM)](https://arxiv.org/abs/2006.11239).
 <p align = "center">
 <img width="400" src="gif_mnist_01.gif"/img>
 </p>
@@ -27,6 +27,4 @@ Increasing $w$ produces images that are more typical but less diverse.
 <p align = "center">
 Samples produced with varying guidance strength, $w$.
 </p>
-
-Training for above models took around 20 epochs (~20 minutes).
 
